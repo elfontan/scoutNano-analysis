@@ -12,3 +12,10 @@ After the first installation, the two following commands are needed to properly 
 source /cvmfs/sft.cern.ch/lcg/views/LCG_106a_cuda/x86_64-el9-gcc11-opt/setup.sh
 eval $(make env)
 ```
+
+Copy the script `run_simple_scoutNano_data.py`:
+```
+cp run_simple_scoutNano_data.py cmgrdf-prototype/examples/.
+cd cmgrdf-prototype/examples
+python3 run_simple_scoutNano_data.py
+```
