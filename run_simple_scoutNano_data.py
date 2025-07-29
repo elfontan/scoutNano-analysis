@@ -165,8 +165,13 @@ def build_flows(year: int, run: int = None):
     )
 
     plots_pfjets = [
+        Plot("nPFJets", "nPFJets", (20, -0.5, 19.5), xTitle="PF jet multiplicity", legend="TR", integer=True),
         Plot("j1pt", "j1pt", (50, 0, 500), xTitle="Leading jet p_{T} (GeV)", legend="TR"),
         Plot("j2pt", "j2pt", (50, 0, 500), xTitle="Subleading jet p_{T} (GeV)", legend="TR"),
+        Plot("j1eta", "j1eta", (50, -5, 5), xTitle="Leading jet #eta", legend="TR"),
+        Plot("j2eta", "j2eta", (50, -5, 5), xTitle="Subleading jet #eta", legend="TR"),
+        Plot("j1phi", "j1phi", (50, -5, 5), xTitle="Leading jet #phi", legend="TR"),
+        Plot("j2phi", "j2phi", (50, -5, 5), xTitle="Subleading jet #phi", legend="TR"),
         Plot("mjj", "mjj", (800, 0, 1600), xTitle="m_{jj} (GeV)", legend="TR", logy=True),
         Plot("detajj", "detajj", (20, 0, 10.0), xTitle="DeltaEta_{jj}", legend="TR"),
     ]
@@ -177,12 +182,21 @@ def build_flows(year: int, run: int = None):
         Define("fat_jpt",   "ScoutingFatPFJetRecluster_pt"),
         Define("fat_jeta",  "ScoutingFatPFJetRecluster_eta"),
         Define("fat_jphi",  "ScoutingFatPFJetRecluster_phi"),
-        Define("fat_jmass", "ScoutingFatPFJetRecluster_mass")
+        Define("fat_jmass", "ScoutingFatPFJetRecluster_mass"),
+        Define("fat_prob_xqq", "ScoutingFatPFJetRecluster_scoutGlobalParT_prob_Xqq"),
+        Define("fat_prob_qcd", "ScoutingFatPFJetRecluster_scoutGlobalParT_prob_QCD"),
+        Define("gloParT_score", "fat_prob_xqq / (fat_prob_xqq + fat_prob_qcd)")
     )
 
     plots_fatjets = [
+        Plot("nFatJets", "nFatJets", (5, -0.5, 4.5), xTitle="Fat jet multiplicity", legend="TR", integer=True),
         Plot("fat_jpt", "fat_jpt", (100, 0, 500), xTitle="Fat jet p_{T} (GeV)", legend="TR"),
+        Plot("fat_jeta", "fat_jeta", (100, -5, 5), xTitle="Fat jet #eta", legend="TR"),
+        Plot("fat_jphi", "fat_jphi", (100, -5, 5), xTitle="Fat jet #phi", legend="TR"),
         Plot("fat_jmass", "fat_jmass", (50, 0, 200), xTitle="Fat jet mass (GeV)", legend="TR"),
+        Plot("fat_prob_xqq", "fat_prob_xqq", (50, 0, 1), xTitle="GloParT P(X_{qq})", legend="TR"),
+        Plot("fat_prob_qcd", "fat_prob_qcd", (50, 0, 1), xTitle="GloParT P(QCD)", legend="TR"),
+        Plot("gloParT_score", "gloParT_score", (50, 0, 1), xTitle="GloParT score", legend="TR"),
     ]
 
     return [(cuts_pfjets, plots_pfjets), (cuts_fatjets, plots_fatjets)]
@@ -191,18 +205,6 @@ def run_analysis(year: str, era: str, data, lumi: float, output_dir: str, run=No
     """Run the CMGRDF processor."""
     ROOT.EnableImplicitMT(8)
     maker = Processor()
-
-    # If year is 2023, extract the run number from the first file in the sample
-    #if year == "2023":
-    #    for sample in data.samples:
-    #        for file_path in sample.source().files:
-    #            print("File path:", file_path)
-    #            run = get_run_number(file_path) 
-    #             print(f"🔸 Extracted run: {run}")
-                    
-    #run = None
-    #print(f"Booking {era} ({year}) with lumi={lumi}, run={run}")
-    #print("---------------------------------------------------")
 
     for cuts, plots in build_flows(year=year, run=run):
         maker.book(data_objects, lumi, cuts, plots)
