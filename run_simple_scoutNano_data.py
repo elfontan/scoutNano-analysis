@@ -2,6 +2,40 @@ from CMGRDF import *
 import ROOT
 from CMGRDF.cms.DASSource import DASSource
 import os
+import math
+
+# --------------------------------------------------- #
+# Reading a dataset from EOS or a single file
+# --------------------------------------------------- #
+##P = localOrEOS("2018", "/data/gpetrucc/NanoTrees_TTH_v6", "/eos/cms/store/cmst3/group/tthlep/peruzzi/NanoTrees_TTH_091019_v6pre")
+#P = "root://xrootd-cms.infn.it//store/data/Run2025C/ScoutingPFRun3/NANOAOD/PromptReco-v1/000/393/087/00000/704e629a-ad74-442e-a108-319da7289aa5.root"
+
+#data_dijet = [
+#    Data([DataSample("ScoutingPF_Run2025C", P)]),
+#]
+#print(f"Reading from {P}")
+
+# --------------------------------------------------- #
+# Reading a dataset from DAS through DASSource
+# --------------------------------------------------- #
+# DataSample implements .source(era), needed when the book() method is called.
+# Internally, DataSample delegates to DASSource to resolve files.
+
+#data_dijet = [
+#    Data(
+#        samples=[
+#            DataSample(
+#                "ScoutingPFRun3_Run2025C", # Sample name 
+#                DASSource(
+#                    "ScoutingPFRun3_Run2025C", # Sample name
+#                    "/ScoutingPFRun3/Run2025C-PromptReco-v1/NANOAOD" # Sample dataset
+#                )
+#            )
+#        ],
+#        era="2025C"
+#    )
+#]
+
 
 # ================================
 #  CONFIGURATION
@@ -53,7 +87,7 @@ YEARS = {
             # "2022E": [],
             # "2022F": [],
             # "2022G": [],
-        }
+       }
     }
 }
 
@@ -144,39 +178,70 @@ def get_trigger_cut(year: int, run: int = None) -> Cut:
 # ============================================
 
 def build_flows(year: int, run: int = None):
-    """Define all analysis flows (PFJets_AK4 & FatJets_AK8)."""
-    cuts_pfjets = Flow("pfjets",
+    """Define all analysis flows (PFJets_AK4 & PFJetsRecluster_AK4 & FatPFJetsRecluster_AK8)."""
+    cuts_PFJets = Flow("PFJets",
         get_trigger_cut(year, run), #Cut("trigger", "DST_PFScouting_JetHT"),
-        Define("nPFJets", "nScoutingPFJetRecluster"),
-        Define("goodJetsIdx", "Nonzero(ScoutingPFJetRecluster_pt > 30 && abs(ScoutingPFJetRecluster_eta) < 5)"),
-        Define("sortedJets", "Take(ScoutingPFJetRecluster_pt, goodJetsIdx)"),
-        Define("nGoodJets", "Sum(ScoutingPFJetRecluster_pt > 30 && abs(ScoutingPFJetRecluster_eta) < 5)"),
-        Cut("nGoodJets", "nGoodJets >= 2"),
-        Define("iJet1", "goodJetsIdx[0]"),
-        Define("iJet2", "goodJetsIdx[1]"),
-        Define("j1pt",  "ScoutingPFJetRecluster_pt[iJet1]"),
-        Define("j2pt",  "ScoutingPFJetRecluster_pt[iJet2]"),
-        Define("j1eta", "ScoutingPFJetRecluster_eta[iJet1]"),
-        Define("j2eta", "ScoutingPFJetRecluster_eta[iJet2]"),
-        Define("j1phi", "ScoutingPFJetRecluster_phi[iJet1]"),
-        Define("j2phi", "ScoutingPFJetRecluster_phi[iJet2]"),
-        Define("mjj", "sqrt(2*j1pt*j2pt*(cosh(j1eta - j2eta) - cos(j1phi - j2phi)))"),
-        Define("detajj", "abs(j1eta-j2eta)")
+        Define("nPFJets", "nScoutingPFJet"),
+        Define("goodPFJetsIdx", "Nonzero(ScoutingPFJet_pt > 30 && abs(ScoutingPFJet_eta) < 5)"),
+        Define("sortedPFJets", "Take(ScoutingPFJet_pt, goodPFJetsIdx)"),
+        Define("nGoodPFJets", "Sum(ScoutingPFJet_pt > 30 && abs(ScoutingPFJet_eta) < 5)"),
+        Cut("nGoodPFJets", "nGoodPFJets >= 2"),
+        Define("iPFJet1", "goodPFJetsIdx[0]"),
+        Define("iPFJet2", "goodPFJetsIdx[1]"),
+        Define("pfj1pt",  "ScoutingPFJet_pt[iPFJet1]"),
+        Define("pfj2pt",  "ScoutingPFJet_pt[iPFJet2]"),
+        Define("pfj1eta", "ScoutingPFJet_eta[iPFJet1]"),
+        Define("pfj2eta", "ScoutingPFJet_eta[iPFJet2]"),
+        Define("pfj1phi", "ScoutingPFJet_phi[iPFJet1]"),
+        Define("pfj2phi", "ScoutingPFJet_phi[iPFJet2]"),
+        Define("mjj_PF", "sqrt(2*pfj1pt*pfj2pt*(cosh(pfj1eta - pfj2eta) - cos(pfj1phi - pfj2phi)))"),
+        Define("detajj_PF", "abs(pfj1eta-pfj2eta)")
     )
 
-    plots_pfjets = [
-        Plot("nPFJets", "nPFJets", (20, -0.5, 19.5), xTitle="PF jet multiplicity", legend="TR", integer=True),
-        Plot("j1pt", "j1pt", (50, 0, 500), xTitle="Leading jet p_{T} (GeV)", legend="TR"),
-        Plot("j2pt", "j2pt", (50, 0, 500), xTitle="Subleading jet p_{T} (GeV)", legend="TR"),
-        Plot("j1eta", "j1eta", (50, -5, 5), xTitle="Leading jet #eta", legend="TR"),
-        Plot("j2eta", "j2eta", (50, -5, 5), xTitle="Subleading jet #eta", legend="TR"),
-        Plot("j1phi", "j1phi", (50, -5, 5), xTitle="Leading jet #phi", legend="TR"),
-        Plot("j2phi", "j2phi", (50, -5, 5), xTitle="Subleading jet #phi", legend="TR"),
-        Plot("mjj", "mjj", (800, 0, 1600), xTitle="m_{jj} (GeV)", legend="TR", logy=True),
-        Plot("detajj", "detajj", (20, 0, 10.0), xTitle="DeltaEta_{jj}", legend="TR"),
+    plots_PFJets = [
+        Plot("nPFJets", "nPFJets", (20, -0.5, 19.5), xTitle="PF AK4 jet multiplicity", legend="TR", integer=True),
+        Plot("pfj1pt", "pfj1pt", (50, 0, 500), xTitle="Leading AK4 jet p_{T} (GeV)", legend="TR"),
+        Plot("pfj2pt", "pfj2pt", (50, 0, 500), xTitle="Subleading AK4 jet p_{T} (GeV)", legend="TR"),
+        Plot("pfj1eta", "pfj1eta", (50, -5, 5), xTitle="Leading AK4 jet #eta", legend="TR"),
+        Plot("pfj2eta", "pfj2eta", (50, -5, 5), xTitle="Subleading AK4 jet #eta", legend="TR"),
+        Plot("pfj1phi", "pfj1phi", (50, -5, 5), xTitle="Leading AK4 jet #phi", legend="TR"),
+        Plot("pfj2phi", "pfj2phi", (50, -5, 5), xTitle="Subleading AK4 jet #phi", legend="TR"),
+        Plot("mjj_PF", "mjj_PF", (800, 0, 1600), xTitle="m_{jj} (GeV)", legend="TR", logy=True),
+        Plot("detajj_PF", "detajj_PF", (20, 0, 10.0), xTitle="DeltaEta_{jj}", legend="TR"),
     ]
 
-    cuts_fatjets = Flow("fatjets",
+    cuts_PFJetsRecluster = Flow("PFJetsRecluster",
+        get_trigger_cut(year, run), #Cut("trigger", "DST_PFScouting_JetHT"),
+        Define("nPFJetsRecluster", "nScoutingPFJetRecluster"),
+        Define("goodPFJetsReclusterIdx", "Nonzero(ScoutingPFJetRecluster_pt > 30 && abs(ScoutingPFJetRecluster_eta) < 5)"),
+        Define("sortedPFJetsRecluster", "Take(ScoutingPFJetRecluster_pt, goodPFJetsReclusterIdx)"),
+        Define("nGoodPFJetsRecluster", "Sum(ScoutingPFJetRecluster_pt > 30 && abs(ScoutingPFJetRecluster_eta) < 5)"),
+        Cut("nGoodPFJetsRecluster", "nGoodPFJetsRecluster >= 2"),
+        Define("iPFJetRecluster1", "goodPFJetsReclusterIdx[0]"),
+        Define("iPFJetRecluster2", "goodPFJetsReclusterIdx[1]"),
+        Define("rpfj1pt",  "ScoutingPFJetRecluster_pt[iPFJetRecluster1]"),
+        Define("rpfj2pt",  "ScoutingPFJetRecluster_pt[iPFJetRecluster2]"),
+        Define("rpfj1eta", "ScoutingPFJetRecluster_eta[iPFJetRecluster1]"),
+        Define("rpfj2eta", "ScoutingPFJetRecluster_eta[iPFJetRecluster2]"),
+        Define("rpfj1phi", "ScoutingPFJetRecluster_phi[iPFJetRecluster1]"),
+        Define("rpfj2phi", "ScoutingPFJetRecluster_phi[iPFJetRecluster2]"),
+        Define("mjj_PFR", "sqrt(2*rpfj1pt*rpfj2pt*(cosh(rpfj1eta - rpfj2eta) - cos(rpfj1phi - rpfj2phi)))"),
+        Define("detajj_PFR", "abs(rpfj1eta-rpfj2eta)")
+    )
+
+    plots_PFJetsRecluster = [
+        Plot("nPFJetsRecluster", "nPFJetsRecluster", (20, -0.5, 19.5), xTitle="PF AK4 reclustered jet multiplicity", legend="TR", integer=True),
+        Plot("rpfj1pt", "rpfj1pt", (50, 0, 500), xTitle="Leading AK4 jet p_{T} (GeV)", legend="TR"),
+        Plot("rpfj2pt", "rpfj2pt", (50, 0, 500), xTitle="Subleading AK4 jet p_{T} (GeV)", legend="TR"),
+        Plot("rpfj1eta", "rpfj1eta", (50, -5, 5), xTitle="Leading AK4 jet #eta", legend="TR"),
+        Plot("rpfj2eta", "rpfj2eta", (50, -5, 5), xTitle="Subleading AK4 jet #eta", legend="TR"),
+        Plot("rpfj1phi", "rpfj1phi", (50, -5, 5), xTitle="Leading AK4 jet #phi", legend="TR"),
+        Plot("rpfj2phi", "rpfj2phi", (50, -5, 5), xTitle="Subleading AK4 jet #phi", legend="TR"),
+        Plot("mjj_PFR", "mjj_PFR", (800, 0, 1600), xTitle="m_{jj} (GeV)", legend="TR", logy=True),
+        Plot("detajj_PFR", "detajj_PFR", (20, 0, 10.0), xTitle="DeltaEta_{jj}", legend="TR"),
+    ]
+
+    cuts_fatPFJetsRecluster = Flow("fatPFJetsRecluster",
         get_trigger_cut(year, run), #Cut("trigger", "DST_PFScouting_JetHT"),
         Define("nFatJets",  "nScoutingFatPFJetRecluster"),
         Define("fat_jpt",   "ScoutingFatPFJetRecluster_pt"),
@@ -188,7 +253,7 @@ def build_flows(year: int, run: int = None):
         Define("gloParT_score", "fat_prob_xqq / (fat_prob_xqq + fat_prob_qcd)")
     )
 
-    plots_fatjets = [
+    plots_fatPFJetsRecluster = [
         Plot("nFatJets", "nFatJets", (5, -0.5, 4.5), xTitle="Fat jet multiplicity", legend="TR", integer=True),
         Plot("fat_jpt", "fat_jpt", (100, 0, 500), xTitle="Fat jet p_{T} (GeV)", legend="TR"),
         Plot("fat_jeta", "fat_jeta", (100, -5, 5), xTitle="Fat jet #eta", legend="TR"),
@@ -199,7 +264,7 @@ def build_flows(year: int, run: int = None):
         Plot("gloParT_score", "gloParT_score", (50, 0, 1), xTitle="GloParT score", legend="TR"),
     ]
 
-    return [(cuts_pfjets, plots_pfjets), (cuts_fatjets, plots_fatjets)]
+    return [(cuts_PFJets, plots_PFJets), (cuts_PFJetsRecluster, plots_PFJetsRecluster),(cuts_fatPFJetsRecluster, plots_fatPFJetsRecluster)]
 
 def run_analysis(year: str, era: str, data, lumi: float, output_dir: str, run=None, max_events=None):
     """Run the CMGRDF processor."""

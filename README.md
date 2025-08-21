@@ -9,13 +9,16 @@ Then, follow the setup instructions as described in [that repository](https://gi
 
 After the first installation, the two following commands are needed to properly configure the environment:s
 ```
+voms-proxy-init --voms cms --valid 168:00
 source /cvmfs/sft.cern.ch/lcg/views/LCG_106a_cuda/x86_64-el9-gcc11-opt/setup.sh
+cd cmgrdf-prototype/
 eval $(make env)
 ```
 
-Copy the script `run_simple_scoutNano_data.py`:
+Copy the script `run_simple_scoutNano_data.py` from the main repository to `examples`:
 ```
-cp run_simple_scoutNano_data.py cmgrdf-prototype/examples/.
-cd cmgrdf-prototype/examples
+cp ../run_simple_scoutNano_data.py examples/.
+cd examples
 python3 run_simple_scoutNano_data.py
 ```
+
