@@ -124,6 +124,15 @@ class TrigDijetHTAnalysis(Module):
 
         self.n_total_events += 1
 
+        # --- L1 bit selection ---
+        if not (
+                getattr(event, "L1_HTT280er", False) or
+                getattr(event, "L1_SingleJet180", False) or
+                getattr(event, "L1_DoubleJet30er2p5_Mass_Min250_dEta_Max1p5", False) or
+                getattr(event, "L1_ETT2000", False)
+        ):
+            return False
+
         #print("*** ----------- ***")
         #print("*** Event = ", event)
         #print("*** ----------- ***")
@@ -138,9 +147,7 @@ class TrigDijetHTAnalysis(Module):
         # --- Global HT definition
         njetHt = [j for j in jets if j.pt > 30 and abs(j.eta) < 2.5]
         HT = sum(j.pt for j in njetHt)
-
-        #if HT < 450:  
-        #    return False
+        cutHT = 400.0
         
         if len(njetAcc) < 2:
             return False
@@ -182,19 +189,20 @@ class TrigDijetHTAnalysis(Module):
             if len(central_jets) >= 2:
                 central_sorted = sorted(central_jets, key=lambda x: x.pt, reverse=True)
                 if abs(central_sorted[0].eta - central_sorted[1].eta) < 1.3:
-                    v0, v1 = Lorentz(PseudoJ(central_sorted[:2]))
-                    Mjj_1 = (v0 + v1).M()
                     HT_1 = HT
-                    self.n_VBF += 1
+                    if (HT_1 > cutHT):
+                        v0, v1 = Lorentz(PseudoJ(central_sorted[:2]))
+                        Mjj_1 = (v0 + v1).M()
+                        self.n_VBF += 1
                     
         else:
             # -----------------
             # Tuning thresholds
             # -----------------
             boosted_pt_cut = 170
-            isr_pt_cut_boosted = 150            
-            resJ_pt_cut = 60.0  
-            ISR_pt_cut_resolved = 60.0
+            isr_pt_cut_boosted = 100            
+            resJ_pt_cut = 30.0  
+            ISR_pt_cut_resolved = 50.0
    
             # ---------------------------------
             # [2] BOOSTED w/ ISR CATEGORY (AK8)
@@ -223,11 +231,12 @@ class TrigDijetHTAnalysis(Module):
                     # Require at least 1 ISR candidate: if any ISR candidate exists, select the highest-pT one
                     if len(isr_candidates) > 0:
                         ISR_jet = max(isr_candidates, key=lambda x: x.Pt())
-                        Mjj_2 = boosted_lv.M()
                         HT_2 = HT
                         PtAk8_2 = boosted_lv.Pt()
-                        isBoosted = True
-                        self.n_Boosted += 1
+                        if (HT_2 > cutHT):
+                            Mjj_2 = boosted_lv.M()
+                            isBoosted = True
+                            self.n_Boosted += 1
 
             if not (isBoosted):
                 # -----------------------------------
@@ -238,71 +247,80 @@ class TrigDijetHTAnalysis(Module):
 
                 # Chosing as dijet pair the one with 0-1 jets and highest ISR pT
                 # --------------------------------------------------------------
-                if len(j_ak4) >= 3:
+                #if len(j_ak4) >= 3:
                     # Take the two leading AK4 jets (highest pT)
-                    i, j = 0, 1
-                    min_dEta = abs(j_ak4[i].Eta() - j_ak4[j].Eta())
+                #    i, j = 0, 1
+                #    min_dEta = abs(j_ak4[i].Eta() - j_ak4[j].Eta())
 
-                    if (min_dEta < 1.3 and
-                        j_ak4[i].Pt() >= resJ_pt_cut and
-                        j_ak4[j].Pt() >= resJ_pt_cut):
+                #    if (min_dEta < 1.3 and
+                #        j_ak4[i].Pt() >= resJ_pt_cut and
+                #        j_ak4[j].Pt() >= resJ_pt_cut):
             
-                        leadj = TLorentzVector(j_ak4[i])
-                        subleadj = TLorentzVector(j_ak4[j])
-                        res_pair = leadj + subleadj
+                #        leadj = TLorentzVector(j_ak4[i])
+                #        subleadj = TLorentzVector(j_ak4[j])
+                #        res_pair = leadj + subleadj
                         
                         # Pick ISR jet as the highest-pT one not in the pair
-                        ISR_jet = max(
-                            (jet for k, jet in enumerate(j_ak4) if k not in (i, j)),
-                            key=lambda jet: jet.Pt(),
-                            default=None
-                        )
+                #        ISR_jet = max(
+                #            (jet for k, jet in enumerate(j_ak4) if k not in (i, j)),
+                #            key=lambda jet: jet.Pt(),
+                #            default=None
+                #        )
 
-                        if ISR_jet and ISR_jet.Pt() >= ISR_pt_cut_resolved:
-                            Mjj_3 = res_pair.M()
-                            HT_3 = HT
-                            isResolved = True
-                            self.n_Resolved += 1
+                #        if ISR_jet and ISR_jet.Pt() >= ISR_pt_cut_resolved:
+                #            Mjj_3 = res_pair.M()
+                #            HT_3 = HT
+                #            isResolved = True
+                #            self.n_Resolved += 1
                 
                 # Chosing as dijet pair the one closest in dPhi
                 # ---------------------------------------------
-                #if len(j_ak4) >= 3:
-                #    best_pair = None
-                #    min_dPhi = 999
-                #    for i in range(len(j_ak4)):
-                #        for j in range(i + 1, len(j_ak4)):
-                #            dPhi_pair = abs(j_ak4[i].Phi() - j_ak4[j].Phi())
-                #            if dPhi_pair < min_dPhi:
-                #                min_dPhi = dPhi_pair
-                #                best_pair = (i, j)
+                if len(j_ak4) >= 3:
+                    best_pair = None
+                    min_dPhi = 999
+                    for i in range(len(j_ak4)):
+                        for j in range(i + 1, len(j_ak4)):
+                            dPhi_pair = abs(j_ak4[i].Phi() - j_ak4[j].Phi())
+                            if dPhi_pair < min_dPhi:
+                                min_dPhi = dPhi_pair
+                                best_pair = (i, j)
 
-                #    if best_pair is not None:
-                #        i, j = best_pair
-                #        min_dEta = abs(j_ak4[i].Eta() - j_ak4[j].Eta())
+                    if best_pair is not None:
+                        i, j = best_pair
+                        min_dEta = abs(j_ak4[i].Eta() - j_ak4[j].Eta())
 
-                #        if min_dEta < 1.3 and j_ak4[i].Pt() >= resJ_pt_cut and j_ak4[j].Pt() >= resJ_pt_cut:
-                #            leadj = TLorentzVector(j_ak4[i])
-                #            subleadj = TLorentzVector(j_ak4[j])
-                #            res_pair = leadj + subleadj
-                #            ISR_jet = max(
-                #                (jet for k, jet in enumerate(j_ak4) if k not in best_pair),
-                #                key=lambda jet: abs(res_pair.DeltaPhi(jet)),
-                #                default=None
-                #            )
-                #            if ISR_jet and ISR_jet.Pt() >= ISR_pt_cut_resolved:
-                #                Mjj_3 = res_pair.M()
-                #                HT_3 = HT
-                #                isResolved = True
-                #                self.n_Resolved += 1
+                        if min_dEta < 1.3 and j_ak4[i].Pt() >= resJ_pt_cut and j_ak4[j].Pt() >= resJ_pt_cut:
+                            leadj = TLorentzVector(j_ak4[i])
+                            subleadj = TLorentzVector(j_ak4[j])
+                            res_pair = leadj + subleadj
+                            # Pick ISR jet as the highest-pT one not in the pair
+                            ISR_jet = max(
+                                (jet for k, jet in enumerate(j_ak4) if k not in best_pair),
+                                key=lambda jet: jet.Pt(),
+                                default=None
+                            )
+                            # Pick ISR jet as the farest in phi
+                            #ISR_jet = max(
+                            #    (jet for k, jet in enumerate(j_ak4) if k not in best_pair),
+                            #    key=lambda jet: abs(res_pair.DeltaPhi(jet)),
+                            #    default=None
+                            #)
+                            if ISR_jet and ISR_jet.Pt() >= ISR_pt_cut_resolved and res_pair.M() > 150:
+                                HT_3 = HT
+                                if (HT_3 > cutHT):
+                                    Mjj_3 = res_pair.M()
+                                    isResolved = True
+                                    self.n_Resolved += 1
 
                 if not(isResolved):
                     # ===============================
                     # [4] REST CATEGORY
                     # ===============================
                     if len(j_ak4) >= 2 and abs(j_ak4[0].Eta() - j_ak4[1].Eta()) < 1.3:
-                        Mjj_4 = (j_ak4[0] + j_ak4[1]).M()
                         HT_4 = HT
-                        self.n_Rest += 1
+                        if (HT_4 > cutHT):
+                            Mjj_4 = (j_ak4[0] + j_ak4[1]).M()
+                            self.n_Rest += 1
 
 
         # *************
