@@ -23,7 +23,8 @@ python3 run_simple_scoutNano_data.py
 ```
 
 A similar example to run on signal MC events is provided: `run_mcSig_scoutNano.py`.
-It can be tested in the same way:```
+It can be tested in the same way:
+```
 cp ../run_mcSig_scoutNano.py examples/.
 cd examples
 python3 run_mcSig_scoutNano.py

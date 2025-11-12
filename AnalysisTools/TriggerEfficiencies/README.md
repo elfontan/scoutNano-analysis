@@ -36,3 +36,12 @@ The ingredients (that can be customised according to the needs) are:
 * A `run_data2024_triggEff.sh` as executable running the python script to compute trigger efficiencies for every file in the chosen list (see below).
 * The python script to compute trigger efficiencies `data2024_triggEff.py`: note that the only difference with respect to the script provided in the main directory is the parsing of some options to allow to run on every single file separately.
 * A list of files to consider. Two examples are provided: a reduced list (`red_list_data2024I.txt`) and the full list for 2024I data (`list_data2024I.txt`). Note that the prefix `root://eoscms.cern.ch//eos/cms` is needed.
+
+For submission:
+
+* Setup the proxy
+* Create an output directory to collect the produced histo files, e.g. `outputHistos`
+* Run:
+```
+condor_submit data2024_triggEff.submit
+```
