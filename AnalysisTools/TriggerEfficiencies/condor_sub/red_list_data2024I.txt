@@ -1,0 +1,5 @@
+root://eoscms.cern.ch//eos/cms/store/data/Run2024I/ScoutingPFRun3/NANOAOD/PromptReco-v2/000/386/945/00000/a95e9a38-e96a-4644-9490-933fd4c7de1a.root
+root://eoscms.cern.ch//eos/cms/store/data/Run2024I/ScoutingPFRun3/NANOAOD/PromptReco-v2/000/386/945/00000/12aef2b2-5167-4c14-9524-7f138fb56409.root
+root://eoscms.cern.ch//eos/cms/store/data/Run2024I/ScoutingPFRun3/NANOAOD/PromptReco-v2/000/386/945/00000/9f6a952b-e36f-4948-89e3-f94efe54e13e.root
+root://eoscms.cern.ch//eos/cms/store/data/Run2024I/ScoutingPFRun3/NANOAOD/PromptReco-v2/000/386/951/00000/4822da5d-c7bc-4f34-a08e-d82a5fadec9e.root
+root://eoscms.cern.ch//eos/cms/store/data/Run2024I/ScoutingPFRun3/NANOAOD/PromptReco-v2/000/386/951/00000/f9a5ce78-319f-4e2c-8f43-983da8a51306.root

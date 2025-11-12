@@ -89,7 +89,7 @@ class TrigDijetHTAnalysis(Module):
         self.h_minv_4_passed = ROOT.TH1F("h_minv_4_passed", "; M_{jj} pp [GeV]; Efficiency;", 100, 30., 630.)
         self.h_ht_4_all = ROOT.TH1F("h_ht_4_all", "; H_{T} pp [GeV]; Efficiency;", 100, 0., 1500.)
         self.h_ht_4_passed = ROOT.TH1F("h_ht_4_passed", "; H_{T} pp [GeV]; Efficiency;", 100, 0., 1500.)
-        
+
         for h in [
                 self.h_passreftrig, self.h_ht_inclusive_all, self.h_ht_inclusive_passed,
                 self.h_minv_1_all, self.h_minv_1_passed, self.h_ht_1_all, self.h_ht_1_passed,
@@ -135,11 +135,12 @@ class TrigDijetHTAnalysis(Module):
 
         # --- Jet preselection ---
         njetAcc = [j for j in jets if j.pt > 30 and abs(j.eta) < 5]
-        # --- Global HT definition          
+        # --- Global HT definition
         njetHt = [j for j in jets if j.pt > 30 and abs(j.eta) < 2.5]
         HT = sum(j.pt for j in njetHt)
-        #if HT < 450:
-        #    return False        
+
+        #if HT < 450:  
+        #    return False
         
         if len(njetAcc) < 2:
             return False
@@ -234,7 +235,6 @@ class TrigDijetHTAnalysis(Module):
                 # -----------------------------------
                 cluster_resolved = fj.ClusterSequence(PseudoJ(sort_jets), jetdef_ak4)
                 j_ak4 = Lorentz(fj.sorted_by_pt(cluster_resolved.inclusive_jets()))
-
 
                 # Chosing as dijet pair the one with 0-1 jets and highest ISR pT
                 # --------------------------------------------------------------
@@ -356,14 +356,25 @@ signal_paths    = ["PFScouting_JetHT"]
 
 preselection= "" #DST_PFScouting_SingleMuon == 1 && DST_PFScouting_JetHT == 1"
 
-files=[
-    "root://cms-xrd-global.cern.ch///store/data/Run2024I/ScoutingPFRun3/NANOAOD/PromptReco-v2/000/386/945/00000/12aef2b2-5167-4c14-9524-7f138fb56409.root"
-]
-
+### --------------- ###
+### Parse arguments ###
+### --------------- ###
+args = dict(arg.split('=') for arg in sys.argv[1:] if '=' in arg)
+inputFile = args.get('inputFile')
+outputFile = args.get('outputFile', 'histos_DijetHTTrigNanoAOD.root')
 
 ### ------- ###
 ### Running ###
 ### ------- ###
-p=PostProcessor(".",files,cut=preselection,branchsel=None,modules=[TrigDijetHTAnalysis()],noOut=True,histFileName="TEST_histos_DijetHTTrigNanoAOD.root",histDirName="DijethtTrigAnalyzerNanoAOD")
+p = PostProcessor(
+    ".",
+    [inputFile],
+    cut=preselection,
+    branchsel=None,
+    modules=[TrigDijetHTAnalysis()],
+    noOut=True,
+    histFileName=outputFile,
+    histDirName="DijethtTrigAnalyzerNanoAOD"
+)
 
 p.run()

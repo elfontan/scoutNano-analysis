@@ -28,3 +28,10 @@ cp ../run_mcSig_scoutNano.py examples/.
 cd examples
 python3 run_mcSig_scoutNano.py
 ```
+
+## AnalysisTools directory
+
+Some script to study signal MC samples and trigger efficiencies are collected in the `AnalysisTools` directory. There are two separate repositories:
+
+* `SigMC-studies`
+* `TriggerEfficiencies`
