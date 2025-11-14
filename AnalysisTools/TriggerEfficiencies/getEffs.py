@@ -130,13 +130,47 @@ class TrigDijetHTAnalysis(Module):
         #print("*** n_total_events: ", self.n_total_events)
         #print("*** ----------- ***")
                 
-        # --- L1 bit selection ---
-        if not (
-                getattr(event, "L1_HTT280er", False) or
-                getattr(event, "L1_SingleJet180", False) or
-                getattr(event, "L1_DoubleJet30er2p5_Mass_Min250_dEta_Max1p5", False) or
-                getattr(event, "L1_ETT2000", False)
-        ):
+        # Prescaled L1 bits in JetHT scouting trigger
+        prescaled_triggers = [
+            "L1_HTT200er",
+            "L1_HTT255er",
+            "L1_SingleMu5_SQ14_BMTF",
+            "L1_SingleMu6_SQ14_BMTF",
+            "L1_SingleMu7_SQ14_BMTF",
+            "L1_SingleMu8_SQ14_BMTF",
+            "L1_SingleMu9_SQ14_BMTF",
+        ]
+        
+        # Unprescaled L1 bits in JetHT scouting trigger
+        good_triggers = [
+            "L1_HTT280er",
+            "L1_SingleJet180",
+            "L1_DoubleJet30er2p5_Mass_Min250_dEta_Max1p5",
+            "L1_ETT2000",
+            "L1_SingleMu10_SQ14_BMTF",
+            "L1_SingleMu11_SQ14_BMTF"
+        ]
+
+        # Determine which triggers fired
+        fired_prescaled = [t for t in prescaled_triggers if getattr(event, t, False)]
+        fired_good      = [t for t in good_triggers      if getattr(event, t, False)]
+        
+        passed_prescaled = len(fired_prescaled) > 0
+        passed_good      = len(fired_good) > 0
+
+        # --- Debug printout  ---
+        if False:  # set to False to disable
+            print("Event:", event.event)  # or event.eventNumber if available
+            if fired_prescaled:
+                print("  Fired PRESCALED:", ", ".join(fired_prescaled))
+            if fired_good:
+                print("  Fired GOOD:     ", ", ".join(fired_good))
+            if not fired_prescaled and not fired_good:
+                print("  Fired NO relevant L1 bits")
+
+        
+        # Keep ONLY if (passed_good) AND (NOT passed_prescaled)
+        if not passed_good or passed_prescaled:
             return False
         
         jets = Collection(event, "ScoutingPFJet")
@@ -147,7 +181,7 @@ class TrigDijetHTAnalysis(Module):
         # --- Global HT definition          
         njetHt = [j for j in jets if j.pt > 30 and abs(j.eta) < 2.5]
         HT = sum(j.pt for j in njetHt)
-        cutHT = 400.0
+        cutHT = 100.0
         
         if len(njetAcc) < 2:
             return False
@@ -310,17 +344,8 @@ class TrigDijetHTAnalysis(Module):
                                 HT_3 = HT
                                 if (HT_3 > cutHT):
                                     Mjj_3 = res_pair.M()
-                                    if (Mjj_3 < 100):
-                                        print("---------------------------------")
-                                        print("Leading jet pt = ", leadj.Pt())
-                                        print("Sublead jet pt = ", subleadj.Pt())
-                                        print("ISR jet pt = ", ISR_jet.Pt())
-                                        print("min_dEta = ", min_dEta)
-                                        print("min_dPhi = ", min_dPhi)
-                                        print("HT = ", HT)
-                                        print("---------------------------------")
-                                        isResolved = True
-                                        self.n_Resolved += 1
+                                    isResolved = True
+                                    self.n_Resolved += 1
 
                 if not(isResolved):
                     # ===============================
