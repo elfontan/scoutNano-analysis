@@ -11,7 +11,7 @@ from ROOT import TLorentzVector, TMath
 
 ROOT.PyConfig.IgnoreCommandLineOptions = True
 from importlib import import_module
-
+import json
 import array
 import numpy as np
 import fastjet as fj
@@ -108,6 +108,7 @@ def MuonID(mu):
 
     if abs(mu.trk_dxy) >= 0.2: return False
     if abs(mu.trk_dz) >= 0.5: return False
+    #if mu.trackIso >= 0.15: return False
     if mu.normchi2 >= 3: return False
 
     if mu.nValidRecoMuonHits <= 0: return False
@@ -122,8 +123,23 @@ class TrigDijetHTAnalysis(Module):
     def __init__(self):
         self.writeHistFile=True
         self.reference_paths=reference_paths
-        print(reference_paths)
+        print("[INFO] Reference path: ", reference_paths)
         self.signal_paths=signal_paths
+
+    def is_good_lumi(self, run, lumi):
+        """Return True if (run,lumi) is contained in golden JSON self.good_ls."""
+        if not self.good_ls:
+            print(">> LS discarded!")
+            return True  # If no JSON file, accept everything
+        run = int(run)
+        lumi = int(lumi)
+        if run not in self.good_ls:
+            return False
+        for (a, b) in self.good_ls[run]:
+            if a <= lumi <= b:
+                #print(">> Good run and LS!")
+                return True
+        return False
         
     def beginJob(self,histFile=None,histDirName=None):
         Module.beginJob(self,histFile,histDirName)
@@ -147,15 +163,39 @@ class TrigDijetHTAnalysis(Module):
                 self.h_pt_leading_all, self.h_pt_leading_passed,
         ]:
             self.addObject(h)
+
+        self.golden_json_path = "/afs/cern.ch/work/e/elfontan/private/dijetAnalysis_ScoutingRun3/TRIGGER_EFF/2024_UtilsDataQuality/Cert_Collisions2024_378981_386951_Golden.json"  
+        if os.path.exists(self.golden_json_path):
+            with open(self.golden_json_path, "r") as f:
+                gj = json.load(f)
+            # convert to dict[int, list[(start,end),...]]
+            self.good_ls = {int(run): [(int(a), int(b)) for (a, b) in ranges] for run, ranges in gj.items()}
+            print(f"[INFO] Loaded golden JSON ---{self.golden_json_path}--- with {len(self.good_ls)} runs")
+        else:
+            self.good_ls = {}
+            print(f"[WARN] Golden JSON not found at {self.golden_json_path} - no run/lumi filtering will be applied.")
+
             
     def analyze(self, event):
-        HT = 0.0
-        
-        dst = Object(event, "DST")
 
+        # -------------------------------------------------------
+        # --- Event-level run/lumi selection based on Golden Json
+        # -------------------------------------------------------
+        run = getattr(event, "run", None)
+        lumi = getattr(event, "luminosityBlock", None)  # in NanoAOD this is usually 'luminosityBlock'
+        if run is None or lumi is None:
+            pass
+        else:
+            if not self.is_good_lumi(run, lumi):
+                print("RUN = ", run)
+                print("LS = ", lumi)
+                return False           
+        
         # -------------------------
         # --- Reference trigger ---
         # -------------------------
+        HT = 0.0        
+        dst = Object(event, "DST")
 
         refAccept = any(getattr(dst, path) for path in self.reference_paths)
         self.h_passreftrig.Fill(refAccept)
@@ -188,23 +228,61 @@ class TrigDijetHTAnalysis(Module):
 
         # --- Muon veto (ScoutingMuonNoVtx with dR(mu,jet) < 0.4 ---
         muonsVtx = Collection(event, "ScoutingMuonVtx")
-        muons = Collection(event, "ScoutingMuonNoVtx")
+        muons = Collection(event, "ScoutingMuonVtx")
         #print("Number of muons = ", len(muons))
         ngood_muonsVtx = [mu for mu in muonsVtx if MuonID(mu)]
 
         if (len(ngood_muonsVtx) < 1):
             return False
             
+        clean_jets = []
+
+        # ---  Muon CLEANING:
+        # -----------------------------
+        for j in njetAcc:
+           # Build jet 4-vector
+            jvec = TLorentzVector()
+            jvec.SetPtEtaPhiM(j.pt, j.eta, j.phi, j.m)
+            
+           # Check if too close to any muon
+            close_muons = [mu for mu in muons if deltaR(j, mu) < 0.4]
+           
+            if close_muons:
+               # Subtract overlapping muons
+                for mu in close_muons:
+                    muvec = TLorentzVector()
+                    muvec.SetPtEtaPhiM(mu.pt, mu.eta, mu.phi, 0.105)
+                    jvec -= muvec
+                   
+               # Discard if jet is fully removed
+                if jvec.Pt() < 1:
+                    continue
+                
+            clean_jets.append(jvec)
+            
+        njetAcc = clean_jets
+
+         
         # ----------------------------
         # --- Global HT definition ---
         # ----------------------------
-        njetHt = [j for j in njetAcc if j.pt > 30 and abs(j.eta) < 2.5]
-        HT = sum(j.pt for j in njetHt)
+        njetHt = [j for j in clean_jets if j.Pt() > 30 and abs(j.Eta()) < 2.5]
+        HT = sum(j.Pt() for j in njetHt)
+
 
         # **********************************
         # Check trigger as a function of HT:
         # **********************************
         self.h_ht_inclusive_all.Fill(HT) ## Inclusive
+
+        self.n_totEvents_refTrigJetId += 1 
+
+        # **************************************
+        # Check trigger as a function of lead pT
+        # **************************************
+        if len(njetAcc) >= 1:
+            sort_jets = sorted(njetAcc, key=lambda x: x.Pt(), reverse=True)
+            self.h_pt_leading_all.Fill(sort_jets[0].Pt()) 
 
         # --- Unprescaled L1 bits in JetHT scouting trigger
         #unprescaled_l1Triggers = [
@@ -227,27 +305,13 @@ class TrigDijetHTAnalysis(Module):
                 getattr(event, "L1_ETT2000", False)                                                       
         ):                                                                                    
             return False                                                                                                          
-        
+
         if dst.PFScouting_JetHT == 1:
             self.h_ht_inclusive_passed.Fill(HT) ## Inclusive
+            if len(njetAcc) >= 1:
+                self.h_pt_leading_passed.Fill(sort_jets[0].Pt()) 
+                #self.h_pt_leading_passed.Fill(sort_jets[0].pt) 
 
-        self.n_totEvents_refTrigJetId += 1 
-
-        # **************************************
-        # Check trigger as a function of lead pT
-        # **************************************
-        if len(njetAcc) < 1:
-            return False
-
-        #sort_jets = sorted(njetAcc, key=lambda x: x.Pt(), reverse=True)
-        #self.h_pt_leading_all.Fill(sort_jets[0].Pt()) 
-        #if dst.PFScouting_JetHT == 1:
-        #    self.h_pt_leading_passed.Fill(sort_jets[0].Pt()) 
-        sort_jets = sorted(njetAcc, key=lambda x: x.pt, reverse=True)
-        self.h_pt_leading_all.Fill(sort_jets[0].pt) 
-        if dst.PFScouting_JetHT == 1:
-            self.h_pt_leading_passed.Fill(sort_jets[0].pt) 
-        
         return True
     
 
@@ -268,7 +332,7 @@ preselection= "" #DST_PFScouting_SingleMuon == 1 && DST_PFScouting_JetHT == 1"
 ### Parse arguments ###
 ### --------------- ###
 args = dict(arg.split('=') for arg in sys.argv[1:] if '=' in arg)
-inputFile = args.get('inputFile')
+inputFile = args.get('inputFile', 'root://cms-xrd-global.cern.ch///store/data/Run2024I/ScoutingPFRun3/NANOAOD/PromptReco-v2/000/386/945/00000/12aef2b2-5167-4c14-9524-7f138fb56409.root')
 outputFile = args.get('outputFile', 'histos_InclusiveTrigNanoAOD.root')
 
 ### ------- ###

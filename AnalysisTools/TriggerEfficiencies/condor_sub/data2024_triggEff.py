@@ -11,7 +11,7 @@ from ROOT import TLorentzVector, TMath
 
 ROOT.PyConfig.IgnoreCommandLineOptions = True
 from importlib import import_module
-
+import json
 import array
 import numpy as np
 import fastjet as fj
@@ -30,10 +30,10 @@ def PseudoJ(list_jets):
     for j in list_jets:
 
         # Convert Collection Objects (pt, eta, phi, mass) to (px, py, pz, E)
-        px = j.pt * TMath.Cos(j.phi)
-        py = j.pt * TMath.Sin(j.phi)
-        pz = j.pt * TMath.SinH(j.eta)
-        E = TMath.Sqrt(px**2 + py**2 + pz**2 + j.m**2) #j.mass**2)
+        px = j.Pt() * TMath.Cos(j.Phi())
+        py = j.Pt() * TMath.Sin(j.Phi())
+        pz = j.Pt() * TMath.SinH(j.Eta())
+        E = TMath.Sqrt(px**2 + py**2 + pz**2 + j.M()**2) #j.mass**2)
         
         # Input jets (px, py, pz, E)
         pj = fj.PseudoJet(px, py, pz, E)
@@ -123,8 +123,23 @@ class TrigDijetHTAnalysis(Module):
     def __init__(self):
         self.writeHistFile=True
         self.reference_paths=reference_paths
-        print(reference_paths)
+        print("[INFO] Reference path: ", reference_paths)
         self.signal_paths=signal_paths
+
+    def is_good_lumi(self, run, lumi):
+        """Return True if (run,lumi) is contained in golden JSON self.good_ls."""
+        if not self.good_ls:
+            print(">> LS discarded!")
+            return True  # If no JSON file, accept everything
+        run = int(run)
+        lumi = int(lumi)
+        if run not in self.good_ls:
+            return False
+        for (a, b) in self.good_ls[run]:
+            if a <= lumi <= b:
+                #print(">> Good run and LS!")
+                return True
+        return False
         
     def beginJob(self,histFile=None,histDirName=None):
         Module.beginJob(self,histFile,histDirName)
@@ -170,8 +185,21 @@ class TrigDijetHTAnalysis(Module):
                 self.h_minv_4_all, self.h_minv_4_passed, self.h_ht_4_all, self.h_ht_4_passed,
         ]:
             self.addObject(h)
+
+        self.golden_json_path = "/afs/cern.ch/work/e/elfontan/private/dijetAnalysis_ScoutingRun3/TRIGGER_EFF/2024_UtilsDataQuality/Cert_Collisions2024_378981_386951_Golden.json"  
+        if os.path.exists(self.golden_json_path):
+            with open(self.golden_json_path, "r") as f:
+                gj = json.load(f)
+            # convert to dict[int, list[(start,end),...]]
+            self.good_ls = {int(run): [(int(a), int(b)) for (a, b) in ranges] for run, ranges in gj.items()}
+            print(f"[INFO] Loaded golden JSON ---{self.golden_json_path}--- with {len(self.good_ls)} runs")
+        else:
+            self.good_ls = {}
+            print(f"[WARN] Golden JSON not found at {self.golden_json_path} - no run/lumi filtering will be applied.")
+
             
     def analyze(self, event):
+
         isBoosted = False
         isResolved = False
         HT = 0.0
@@ -185,11 +213,23 @@ class TrigDijetHTAnalysis(Module):
         Mjj_4 = 0.0
         HT_4 = 0.0
 
-        dst = Object(event, "DST")
+        # -------------------------------------------------------
+        # --- Event-level run/lumi selection based on Golden Json
+        # -------------------------------------------------------
+        run = getattr(event, "run", None)
+        lumi = getattr(event, "luminosityBlock", None)  # in NanoAOD this is usually 'luminosityBlock'
+        if run is None or lumi is None:
+            pass
+        else:
+            if not self.is_good_lumi(run, lumi):
+                print("RUN = ", run)
+                print("LS = ", lumi)
+                return False           
 
         # -------------------------
         # --- Reference trigger ---
         # -------------------------
+        dst = Object(event, "DST")
 
         refAccept = any(getattr(dst, path) for path in self.reference_paths)
         self.h_passreftrig.Fill(refAccept)
@@ -217,57 +257,43 @@ class TrigDijetHTAnalysis(Module):
         # --- Muon veto or cleaning (ScoutingMuonVtx with dR(mu,jet) < 0.4 ---
         # --------------------------------------------------------------------
         muonsVtx = Collection(event, "ScoutingMuonVtx")
-        muons = Collection(event, "ScoutingMuonNoVtx")
+        muons = Collection(event, "ScoutingMuonVtx")
         ngood_muonsVtx = [mu for mu in muonsVtx if MuonID(mu)]
 
         if (len(ngood_muonsVtx) < 1):
             return False
 
-        #clean_jets = []
-
-        # ---  Muon VETO:
-        # -----------------------------
-        ##for j in njetAcc:
-        ##    if any(deltaR(j, mu) < 0.4 for mu in muons):
-        ##        #print("*** Jet removed (pt=%.1f eta=%.2f)" % (j.pt, j.eta))
-        ##        continue
-        ##    clean_jets.append(j)
-
-        # --- Create new jet list after muon cleaning ---
-
-        ##print("BEFORE:", len(njetAcc), "AFTER:", len(clean_jets))
+        clean_jets = []
 
         # ---  Muon CLEANING:
         # -----------------------------
-        #for j in njetAcc:
-            # Build jet 4-vector
-        #    jvec = TLorentzVector()
-        #    jvec.SetPtEtaPhiM(j.pt, j.eta, j.phi, j.m)
+        for j in njetAcc:
+           # Build jet 4-vector
+            jvec = TLorentzVector()
+            jvec.SetPtEtaPhiM(j.pt, j.eta, j.phi, j.m)
             
-            # Check if too close to any muon
-        #    close_muons = [mu for mu in muons if deltaR(j, mu) < 0.4]
+           # Check if too close to any muon
+            close_muons = [mu for mu in muons if deltaR(j, mu) < 0.4]
+           
+            if close_muons:
+               # Subtract overlapping muons
+                for mu in close_muons:
+                    muvec = TLorentzVector()
+                    muvec.SetPtEtaPhiM(mu.pt, mu.eta, mu.phi, 0.105)
+                    jvec -= muvec
+                   
+               # Discard if jet is fully removed
+                if jvec.Pt() < 1:
+                    continue
+                
+            clean_jets.append(jvec)
             
-        #    if close_muons:
-                # Subtract overlapping muons
-        #        for mu in close_muons:
-        #            muvec = TLorentzVector()
-        #            muvec.SetPtEtaPhiM(mu.pt, mu.eta, mu.phi, 0.105)
-        #            jvec -= muvec
-                    
-                # Discard if jet is fully removed
-        #        if jvec.Pt() < 1:
-        #            continue
-
-        #    clean_jets.append(jvec)
-            
-        #njetAcc = clean_jets
+        njetAcc = clean_jets
 
         # --- Global HT definition ---
         cutHT = 0.0
-        #njetHt = [j for j in clean_jets if j.Pt() > 30 and abs(j.Eta()) < 2.5]
-        #HT = sum(j.Pt() for j in njetHt)
-        njetHt = [j for j in njetAcc if j.pt > 30 and abs(j.eta) < 2.5]
-        HT = sum(j.pt for j in njetHt)
+        njetHt = [j for j in clean_jets if j.Pt() > 30 and abs(j.Eta()) < 2.5]
+        HT = sum(j.Pt() for j in njetHt)
 
         if len(njetAcc) < 2:
             return False
@@ -275,7 +301,7 @@ class TrigDijetHTAnalysis(Module):
         # -------------------------------
         # ------- CATEGORISATION  -------
         # -------------------------------
-        sort_jets = sorted(njetAcc, key=lambda x: x.pt, reverse=True)
+        sort_jets = sorted(njetAcc, key=lambda x: x.Pt(), reverse=True)
         
         jetdef_ak4 = fj.JetDefinition(fj.antikt_algorithm, 0.4)
         jetdef_ak8 = fj.JetDefinition(fj.antikt_algorithm, 0.8)
@@ -288,35 +314,34 @@ class TrigDijetHTAnalysis(Module):
         forward_pairs = []
         for i in range(len(sort_jets)):
             for j in range(i + 1, len(sort_jets)):
-                eta_i, eta_j = sort_jets[i].eta, sort_jets[j].eta
+                eta_i, eta_j = sort_jets[i].Eta(), sort_jets[j].Eta()
                 dEta = abs(eta_i - eta_j)
                 if (
                         dEta > 5.0
-                        and sort_jets[i].pt > 30
-                        and sort_jets[j].pt > 30
-                        and abs(eta_i) > 2.5
-                        and abs(eta_j) > 2.5
+                        and sort_jets[i].Pt() > 30
+                        and sort_jets[j].Pt() > 30
+                        and abs(eta_i) > 3.0
+                        and abs(eta_j) > 3.0
                         and eta_i * eta_j < 0
                 ):
                     forward_pairs.append((i, j, dEta))
                     
         if forward_pairs:
             i_fwd, j_fwd, _ = max(forward_pairs, key=lambda x: x[2])
-            eta_min, eta_max = sorted([sort_jets[i_fwd].eta, sort_jets[j_fwd].eta])
+            eta_min, eta_max = sorted([sort_jets[i_fwd].Eta(), sort_jets[j_fwd].Eta()])
             central_jets = [
                 j for k, j in enumerate(sort_jets)
                 if k not in (i_fwd, j_fwd)
-                and abs(j.eta) < 2.5
-                and (eta_min < j.eta < eta_max)
+                and abs(j.Eta()) < 2.5
+                and (eta_min < j.Eta() < eta_max)
             ]
             if len(central_jets) >= 2:
-                central_sorted = sorted(central_jets, key=lambda x: x.pt, reverse=True)
-                if abs(central_sorted[0].eta - central_sorted[1].eta) < 1.3:
+                central_sorted = sorted(central_jets, key=lambda x: x.Pt(), reverse=True)
+                if abs(central_sorted[0].Eta() - central_sorted[1].Eta()) < 1.3:
                     HT_1 = HT
-                    #print("-- HT (VBF) = ", HT_1)
 
-                    if (HT_1 > cutHT):
-                        v0, v1 = Lorentz(PseudoJ(central_sorted[:2]))
+                    v0, v1 = Lorentz(PseudoJ(central_sorted[:2]))
+                    if (HT_1 > cutHT and (v0 + v1).M() > 100):
                         Mjj_1 = (v0 + v1).M()
                         self.n_VBF += 1
                     
@@ -338,14 +363,12 @@ class TrigDijetHTAnalysis(Module):
             if len(ak8jets) >= 1:
                 boosted_lv = Lorentz(ak8jets)[0]
                 if boosted_lv.Pt() > boosted_pt_cut:
-                    #ak8_constituents = ak8jets[0].constituents()
-                    #ak8_const_indices = set([id(c) for c in ak8_constituents])
 
                     # Now build the ISR jet candidates from AK4 jets that are NOT in the AK8 jet
                     isr_candidates = []
                     for j in sort_jets:
                         j_lv = TLorentzVector()
-                        j_lv.SetPtEtaPhiM(j.pt, j.eta, j.phi, j.m)
+                        j_lv.SetPtEtaPhiM(j.pt, j.Eta(), j.phi, j.m)
 
                         dR = boosted_lv.DeltaR(j_lv)
 
@@ -357,10 +380,9 @@ class TrigDijetHTAnalysis(Module):
                     if len(isr_candidates) > 0:
                         ISR_jet = max(isr_candidates, key=lambda x: x.Pt())
                         HT_2 = HT
-                        #print("-- HT (Boosted) = ", HT_2)
+
                         PtAk8_2 = boosted_lv.Pt()
-                        if (HT_2 > cutHT):
-                        #if (HT_2 > cutHT and boosted_lv.M() > 50)):
+                        if (HT_2 > cutHT and boosted_lv.M() > 50):
                             Mjj_2 = boosted_lv.M()
                             isBoosted = True
                             self.n_Boosted += 1
@@ -396,7 +418,7 @@ class TrigDijetHTAnalysis(Module):
 
                         if ISR_jet and ISR_jet.Pt() >= ISR_pt_cut_resolved:
                             HT_3 = HT
-                            if (HT_3 > cutHT):
+                            if (HT_3 > cutHT and res_pair.M() > 170):
                                 Mjj_3 = res_pair.M()
                                 isResolved = True
                                 self.n_Resolved += 1
@@ -436,8 +458,7 @@ class TrigDijetHTAnalysis(Module):
                 #            if ISR_jet and ISR_jet.Pt() >= ISR_pt_cut_resolved:
                 #            #if ISR_jet and ISR_jet.Pt() >= ISR_pt_cut_resolved and res_pair.M() > 150:
                 #                HT_3 = HT
-                #                #print("-- HT (Resolved) = ", HT_3)
-                #                if (HT_3 > cutHT):
+                #                if (HT_3 > cutHT and res_pair.M() > 170):
                 #                    Mjj_3 = res_pair.M()
                 #                    isResolved = True
                 #                    self.n_Resolved += 1
@@ -448,9 +469,8 @@ class TrigDijetHTAnalysis(Module):
                     # ===============================
                     if len(j_ak4) >= 2 and abs(j_ak4[0].Eta() - j_ak4[1].Eta()) < 1.3:
                         HT_4 = HT
-                        #print("-- HT (Rest) = ", HT_4)
 
-                        if (HT_4 > cutHT):
+                        if (HT_4 > cutHT and (j_ak4[0] + j_ak4[1]).M() > 100):
                             Mjj_4 = (j_ak4[0] + j_ak4[1]).M()
                             self.n_Rest += 1
 
@@ -473,21 +493,27 @@ class TrigDijetHTAnalysis(Module):
         # --- L1 bits selection ---
         # -------------------------
 
-        # --- L1 bit selection: lowest unprescaled triggers in JetHT scouting path ---
-        #if not (
-        #        getattr(event, "L1_HTT280er", False) or
-        #        getattr(event, "L1_SingleJet180", False) or
-        #        getattr(event, "L1_DoubleJet30er2p5_Mass_Min250_dEta_Max1p5", False) or
-        #        getattr(event, "L1_ETT2000", False)
-        #):
-        #    return False
+        # --- Unprescaled L1 bits in JetHT scouting trigger
+        #unprescaled_l1Triggers = [
+        #    "L1_HTT280er",
+        #    "L1_SingleJet180",
+        #    "L1_DoubleJet30er2p5_Mass_Min250_dEta_Max1p5",
+        #    "L1_ETT2000",
+        #]
+        # --- Prescaled L1 bits in JetHT scouting trigger
+        #prescaled_l1Triggers = [
+        #    "L1_HTT200er",
+        #    "L1_HTT250er",
+        #]
 
-        # --- Veto prescaled triggers in the JetHT scouting path ---
-        #if (
-        #        getattr(event, "L1_HTT200er", False) or
-        #        getattr(event, "L1_HTT255er", False)
-        #):
-        #    return False
+        # --- Keep only events in which one of the unprescaled triggers in the JetHT scouting path fired ---          
+        if not (                                                                                              
+                getattr(event, "L1_HTT280er", False) or                                                        
+                getattr(event, "L1_SingleJet180", False) or                                                        
+                getattr(event, "L1_DoubleJet30er2p5_Mass_Min250_dEta_Max1p5", False) or                                                        
+                getattr(event, "L1_ETT2000", False)                                                       
+        ):                                                                                    
+            return False                                                                                                          
 
         if dst.PFScouting_JetHT == 1:
             self.h_ht_inclusive_passed.Fill(HT) ## Inclusive
@@ -527,7 +553,7 @@ preselection= "" #DST_PFScouting_SingleMuon == 1 && DST_PFScouting_JetHT == 1"
 ### Parse arguments ###
 ### --------------- ###
 args = dict(arg.split('=') for arg in sys.argv[1:] if '=' in arg)
-inputFile = args.get('inputFile')
+inputFile = args.get('inputFile', 'root://cms-xrd-global.cern.ch///store/data/Run2024I/ScoutingPFRun3/NANOAOD/PromptReco-v2/000/386/945/00000/12aef2b2-5167-4c14-9524-7f138fb56409.root')
 outputFile = args.get('outputFile', 'histos_DijetHTTrigNanoAOD.root')
 
 ### ------- ###

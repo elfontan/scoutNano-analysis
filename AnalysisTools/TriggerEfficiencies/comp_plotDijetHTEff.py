@@ -11,7 +11,7 @@ ROOT.gROOT.SetBatch(True)
 # CMS style
 hep.style.use("CMS")
 
-outdir = "/eos/user/e/elfontan/www/dijetAnaRun3/TRIGGER_EFF/"
+outdir = "/eos/user/e/elfontan/www/dijetAnaRun3/TRIGGER_EFF/INCLUSIVE_TrgEff/"
 
 def get_efficiency(num, den):
     """Compute efficiency points with asymmetric errors using ROOT.TEfficiency."""
@@ -43,17 +43,21 @@ def get_efficiency(num, den):
     #return centers, eff, err, edges
 
 def main(args):
-    variables = ["minv_1", "minv_2", "minv_3"]
+    #variables = ["pt_leading"]
+    #variables = ["ht_inclusive", "pt_leading"]
+    variables = ["ht_inclusive"]
+    #variables = ["minv_1", "minv_2", "minv_3"]
     triggers = ["passed"]
 
     # Map file name --> label
     file_labels = []
     for fpath in args.rfiles:
         label = os.path.basename(fpath)
-        label = label.replace("histos_DijetHTTrigNanoAOD_", "").replace(".root", "")
+        label = label.replace("histos_Data2024_inclTrigEff_", "").replace(".root", "")
+        #label = label.replace("histos_DijetHTTrigNanoAOD_", "").replace(".root", "")
         file_labels.append(label)
 
-    colors = ["royalblue", "tomato", "mediumseagreen", "orchid", "orange", "deepskyblue", "goldenrod"]
+    colors = ["royalblue", "mediumseagreen", "tomato", "orchid", "orange", "deepskyblue", "goldenrod"]
 
     os.makedirs(f"{outdir}", exist_ok=True)
 
@@ -66,7 +70,8 @@ def main(args):
                 print(f"[Warning] Could not open file: {fpath}")
                 continue
 
-            fdir = f.Get("DijethtTrigAnalyzerNanoAOD")
+            fdir = f.Get("InclusiveTrigNanoAOD")
+            #fdir = f.Get("DijethtTrigAnalyzerNanoAOD")
             if not fdir:
                 print(f"[Warning] Missing directory in {fpath}")
                 continue
@@ -101,23 +106,35 @@ def main(args):
         hep.cms.label("Preliminary", data=True, year=args.year, com="13.6", ax=ax)
 
         xlabel_map = {
-            "minv_1": r"$m_{jj}$ VBF [GeV]",
-            "minv_2": r"$m_{jj}$ ISR [GeV]",
-            "minv_3": r"$m_{jj}$ pp [GeV]",
+            #"ht_inclusive": r"$H_{T}$ [GeV]",
+            "pt_leading": r"AK4 leading jet $p_{T}$ [GeV]",
         }
         name_map = {
-            "minv_1": "mjjVBF",
-            "minv_2": "mjjISR",
-            "minv_3": "mjjPP",
+            #"ht_inclusive": "ht_Inclusive",
+            "pt_leading": "pt_leading",
         }
         
-        ax.set_xlabel(xlabel_map.get(var, r"$m_{jj}$ [GeV]"))
+        #xlabel_map = {
+        #    "minv_1": r"$m_{jj}$ VBF [GeV]",
+        #    "minv_2": r"$m_{jj}$ ISR [GeV]",
+        #    "minv_3": r"$m_{jj}$ pp [GeV]",
+        #}
+        #name_map = {
+        #    "minv_1": "mjjVBF",
+        #    "minv_2": "mjjISR",
+        #    "minv_3": "mjjPP",
+        #}
+        
+        #ax.set_xlabel(xlabel_map.get(var, r"$m_{jj}$ [GeV]"))
         #ax.set_xlabel(r"$m_{jj}$ [GeV]")
+        #ax.set_xlabel(r"AK4 leading jet $p_{T}$ [GeV]")
+        ax.set_xlabel(r"$H_{T}$ [GeV]")
         ax.set_ylabel("Trigger efficiency")        
-        ax.set_ylabel("Trigger efficiency")
         ax.set_ylim(0, 1.1)
         ax.legend(fontsize=24, loc="lower right", title="Scenarios")
         plt.tight_layout()
+
+        ax.axvline(280, color='black', linestyle='--', linewidth=1.4)
 
         var_tag = name_map.get(var, var)
         for fmt in args.formats:
