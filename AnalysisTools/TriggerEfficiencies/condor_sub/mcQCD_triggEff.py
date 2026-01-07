@@ -330,20 +330,19 @@ class TrigDijetHTAnalysis(Module):
             return False                                                                                                          
 
         # --- Discard events in which one of the prescaled/disabled triggers in the JetHT scouting path fired ---          
-        good_triggers = (
-            getattr(event, "L1_HTT280er", False) or
+        noHTT_triggers = (
             getattr(event, "L1_SingleJet180", False) or
             getattr(event, "L1_DoubleJet30er2p5_Mass_Min250_dEta_Max1p5", False) or
             getattr(event, "L1_ETT2000", False)
         )
         
-        bad_triggers = (
+        disabled_triggers = (
             getattr(event, "L1_HTT200er", False) or
             getattr(event, "L1_HTT255er", False)
         )
 
         # Discard events triggered ONLY by bad triggers
-        if bad_triggers and not good_triggers:
+        if disabled_triggers and not noHTT_triggers:
             return False
 
         if dst.PFScouting_JetHT == 1:
