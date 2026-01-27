@@ -221,13 +221,67 @@ class TrigDijetHTAnalysis(Module):
         njets = getattr(event, "n" + jets._prefix)
 
         # ---------------------------------
+        # ------ Including HLT JECs -------  
+        # ---------------------------------
+        import correctionlib
+        import os
+        
+        # Path to JSON
+        # --------------------------------
+        jec_json = os.path.join(
+            os.getenv("CMSSW_BASE"),
+            "src",
+            "2024_UtilsDataQuality",
+            "jetHLT_jerc.json"
+        )
+        
+        # Load correction set
+        # --------------------------------
+        cset = correctionlib.CorrectionSet.from_file(jec_json)
+        #print("--- Regular corrections (printing keys): ")
+        #for k in cset.keys():
+        #    if "AK4" in k:
+        #        print(k)
+        #print("--- Compound corrections (printing keys): ")
+        #print(cset.compound.keys())
+
+        # Get the specific JEC
+        # --------------------------------
+        jec = cset.compound["HLT_Winter24_V1_MC_L1L2L3Res_AK4PFHLT"]
+
+        # Get Rho in the event
+        # --------------------------------
+        run = getattr(event, "run", None)                                                                                                            
+        rho = getattr(event, "ScoutingRho_fixedGridRhoFastjetAll", 0.0)
+        rho = event.ScoutingRho_fixedGridRhoFastjetAll
+        
+        # ---------------------------------
         # --- Preselection requirements ---
         # ---------------------------------
+        jets = Collection(event, "ScoutingPFJet")
+        njets = getattr(event, "n" + jets._prefix)
+
+        corrected_pts = []
+        for j in jets:
+            variables = {
+                "JetPt": j.pt,
+                "JetEta": j.eta,
+                "JetPhi": j.phi,
+                "JetA": j.jetArea,
+                "Rho": rho,
+                "run": run,
+            }
+            inputs = [variables[inp.name] for inp in jec.inputs]
+            corr_factor = jec.evaluate(*inputs)
+            corrected_pt = j.pt * corr_factor
+            corrected_pts.append(corrected_pt)    
+            #pt_corr = jec.evaluate(*inputs)
+            #print("## PT = ", j.pt, " &&& PT_corr = ", j.pt*pt_corr, " ETA = ", j.eta)
 
         # --- Jet preselection ---
         njetAcc = [
-            j for j in jets
-            if j.pt > 30
+            j for j, pt_corr in zip(jets, corrected_pts) #j for j in jets 
+            if pt_corr > 30 #if j.pt * jec.evaluate(*inputs) > 30 #if j.pt > 30
             and abs(j.eta) < 5
             and JetID(j)          
         ]

@@ -18,10 +18,10 @@ echo "       Output: ${OUTPUTFILE}"
 
 # Run triggEff code
 cd /afs/cern.ch/work/e/elfontan/private/dijetAnalysis_ScoutingRun3/TRIGGER_EFF/condor_sub/
-python3 /afs/cern.ch/work/e/elfontan/private/dijetAnalysis_ScoutingRun3/TRIGGER_EFF/condor_sub/mcQCD_triggEff.py inputFile=$INPUTFILE outputFile=file:$OUTPUTFILE
+python3 /afs/cern.ch/work/e/elfontan/private/dijetAnalysis_ScoutingRun3/TRIGGER_EFF/condor_sub/mc_triggEff.py inputFile=$INPUTFILE outputFile=file:$OUTPUTFILE
 
 # Stage output
-OUTDIR=/afs/cern.ch/work/e/elfontan/private/dijetAnalysis_ScoutingRun3/TRIGGER_EFF/condor_sub/outputHistos_QCD
+OUTDIR=/afs/cern.ch/work/e/elfontan/private/dijetAnalysis_ScoutingRun3/TRIGGER_EFF/condor_sub/outputHistos
 mv ${OUTPUTFILE} ${OUTDIR}/
 echo "[INFO] Job done. Output copied to ${OUTDIR}/${OUTPUTFILE}"
 

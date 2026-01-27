@@ -12,6 +12,7 @@ from ROOT import TLorentzVector, TMath
 ROOT.PyConfig.IgnoreCommandLineOptions = True
 from importlib import import_module
 import json
+import correctionlib
 import array
 import numpy as np
 import fastjet as fj
@@ -145,12 +146,12 @@ class TrigDijetHTAnalysis(Module):
         Module.beginJob(self,histFile,histDirName)
 
         # Counters
-        # --------
+        # -----------
         self.n_totEvents_refTrig = 0 
         self.n_totEvents_refTrigJetId = 0 
 
         # Histos
-        # --------
+        # -----------
         self.h_passreftrig = ROOT.TH1F("h_passreftrig" , "; passed ref trigger", 2, 0. , 2.)
         self.h_ht_inclusive_all = ROOT.TH1F("h_ht_inclusive_all", "; H_{T} Inclusive [GeV]; Efficiency;", 150, 0., 1500.)
         self.h_ht_inclusive_passed = ROOT.TH1F("h_ht_inclusive_passed", "; H_{T} Inclusive [GeV]; Efficiency;", 150, 0., 1500.)
@@ -164,6 +165,8 @@ class TrigDijetHTAnalysis(Module):
         ]:
             self.addObject(h)
 
+        # Golden Json
+        # -----------
         self.golden_json_path = "/afs/cern.ch/work/e/elfontan/private/dijetAnalysis_ScoutingRun3/TRIGGER_EFF/2024_UtilsDataQuality/Cert_Collisions2024_378981_386951_Golden.json"  
         if os.path.exists(self.golden_json_path):
             with open(self.golden_json_path, "r") as f:
@@ -175,9 +178,35 @@ class TrigDijetHTAnalysis(Module):
             self.good_ls = {}
             print(f"[WARN] Golden JSON not found at {self.golden_json_path} - no run/lumi filtering will be applied.")
 
-            
-    def analyze(self, event):
+ 
+        # JECs
+        # -----------
 
+        # --- Path to JSON
+        jec_json = os.path.join(
+            os.getenv("CMSSW_BASE"),
+            "src",
+            "2024_UtilsDataQuality",
+            "jetHLT_jerc.json"
+        )
+        
+        # --- Load correction set
+        self.cset = correctionlib.CorrectionSet.from_file(jec_json)
+        #print("--- Regular corrections (printing keys): ")
+        #for k in cset.keys():
+        #    if "AK4" in k:
+        #        print(k)
+        #print("--- Compound corrections (printing keys): ")
+        #print(cset.compound.keys())
+
+        # --- Get the specific JEC
+        self.jec = self.cset.compound["HLT_Winter24_V1_MC_L1L2L3Res_AK4PFHLT"]
+
+        # ---Cache input order ONCE
+        self.jec_input_names = [inp.name for inp in self.jec.inputs]
+            
+
+    def analyze(self, event):
         # -------------------------------------------------------
         # --- Event-level run/lumi selection based on Golden Json
         # -------------------------------------------------------
@@ -211,20 +240,79 @@ class TrigDijetHTAnalysis(Module):
         #print("*** n_total_events_refTrigger: ", self.n_totEvents_refTrig)
         #print("*** ----------- ***")
 
+        # ---------------------------------
+        # ------ Including HLT JECs -------  
+        # ---------------------------------
         jets = Collection(event, "ScoutingPFJet")
         njets = getattr(event, "n" + jets._prefix)
+        jec = self.jec  
+        input_names = self.jec_input_names        
 
+        # Get Rho and Run in the event
+        # --------------------------------
+        run = getattr(event, "run", None)                                                                                                            
+        rho = getattr(event, "ScoutingRho_fixedGridRhoFastjetAll", 0.0)
+        rho = event.ScoutingRho_fixedGridRhoFastjetAll
+        #rho = getattr(event, "ScoutingRho", 0.0)
+        #rho = event.ScoutingRho
+        
         # ---------------------------------
         # --- Preselection requirements ---
         # ---------------------------------
+        njetAcc = []
+        
+        for j in jets:
+            # Fast reject before JEC
+            if abs(j.eta) > 5:
+                continue
+            if not JetID(j):
+                continue
 
+            # Build inputs in correct order
+            inputs = []
+            for name in input_names:
+                if name == "JetPt":
+                    inputs.append(j.pt)
+                elif name == "JetEta":
+                    inputs.append(j.eta)
+                elif name == "JetPhi":
+                    inputs.append(j.phi)
+                elif name == "JetA":
+                    inputs.append(j.jetArea)
+                elif name == "Rho":
+                    inputs.append(rho)
+                elif name == "run":
+                    inputs.append(run)
+                    
+            corr = jec.evaluate(*inputs)
+            pt_corr = j.pt * corr
+            if pt_corr > 30:
+                njetAcc.append(j)
+
+        #corrected_pts = []
+        #for j in jets:
+        #    variables = {
+        #        "JetPt": j.pt,
+        #        "JetEta": j.eta,
+        #        "JetPhi": j.phi,
+        #        "JetA": j.jetArea,
+        #        "Rho": rho,
+        #        "run": run,
+        #    }
+        #    inputs = [variables[inp.name] for inp in jec.inputs]
+        #    corr_factor = jec.evaluate(*inputs)
+        #    corrected_pt = j.pt * corr_factor
+        #    corrected_pts.append(corrected_pt)    
+        #    #pt_corr = jec.evaluate(*inputs)
+        #    #print("## PT = ", j.pt, " &&& PT_corr = ", j.pt*pt_corr, " ETA = ", j.eta)
+        
         # --- Jet preselection ---
-        njetAcc = [
-            j for j in jets
-            if j.pt > 30
-            and abs(j.eta) < 5
-            and JetID(j)          
-        ]
+        #njetAcc = [
+        #    j for j, pt_corr in zip(jets, corrected_pts) #j for j in jets 
+        #    if pt_corr > 30 #if j.pt * jec.evaluate(*inputs) > 30 #if j.pt > 30
+        #    and abs(j.eta) < 5
+        #    and JetID(j)          
+        #]
 
         # --- Muon veto (ScoutingMuonNoVtx with dR(mu,jet) < 0.4 ---
         muonsVtx = Collection(event, "ScoutingMuonVtx")
@@ -294,7 +382,7 @@ class TrigDijetHTAnalysis(Module):
         # --- Prescaled L1 bits in JetHT scouting trigger
         #prescaled_l1Triggers = [
         #    "L1_HTT200er",
-        #    "L1_HTT250er",
+        #    "L1_HTT255er",
         #]
 
         # --- Keep only events in which one of the unprescaled triggers in the JetHT scouting path fired ---          
@@ -303,6 +391,13 @@ class TrigDijetHTAnalysis(Module):
                 getattr(event, "L1_SingleJet180", False) or                                                        
                 getattr(event, "L1_DoubleJet30er2p5_Mass_Min250_dEta_Max1p5", False) or                                                        
                 getattr(event, "L1_ETT2000", False)                                                       
+        ):                                                                                    
+            return False                                                                                                          
+        
+        # --- Discard events in which one of the prescaled/disabled triggers in the JetHT scouting path fired ---          
+        if (                                                                                              
+                getattr(event, "L1_HTT200er", False) or                                                        
+                getattr(event, "L1_HTT255er", False)                                                         
         ):                                                                                    
             return False                                                                                                          
 
@@ -332,7 +427,9 @@ preselection= "" #DST_PFScouting_SingleMuon == 1 && DST_PFScouting_JetHT == 1"
 ### Parse arguments ###
 ### --------------- ###
 args = dict(arg.split('=') for arg in sys.argv[1:] if '=' in arg)
-inputFile = args.get('inputFile', 'root://cms-xrd-global.cern.ch///store/data/Run2024I/ScoutingPFRun3/NANOAOD/PromptReco-v2/000/386/945/00000/12aef2b2-5167-4c14-9524-7f138fb56409.root')
+#inputFile = args.get('inputFile', 'root://cms-xrd-global.cern.ch///store/data/Run2024I/ScoutingPFRun3/NANOAOD/PromptReco-v2/000/386/945/00000/12aef2b2-5167-4c14-9524-7f138fb56409.root')
+inputFile = args.get('inputFile', 'root://xrootd-cms.infn.it//store/data/Run2024H/ScoutingPFRun3/NANOAOD/ScoutNano-v1/2810000/6c46f11a-aba9-49c9-ab9d-df054244b544.root')
+#inputFile = args.get('inputFile', 'root://cms-xrd-global.cern.ch//store/data/Run2024H/ScoutingPFRun3/NANOAOD/ScoutNano-v1/2810000/6c46f11a-aba9-49c9-ab9d-df054244b544.root')
 outputFile = args.get('outputFile', 'histos_InclusiveTrigNanoAOD.root')
 
 ### ------- ###

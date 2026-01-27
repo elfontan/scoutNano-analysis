@@ -1,5 +1,5 @@
 universe                = vanilla
-executable              = /afs/cern.ch/work/e/elfontan/private/dijetAnalysis_ScoutingRun3/TRIGGER_EFF/condor_sub/run_mcQCD_triggEffInclusive.sh
+executable              = /afs/cern.ch/work/e/elfontan/private/dijetAnalysis_ScoutingRun3/scoutNano-analysis/AnalysisTools/TriggerEfficiencies/condor_sub/run_mc_triggEffInclusive.sh
 arguments               = $(filename)
 output                  = /dev/null
 error                   = /dev/null
