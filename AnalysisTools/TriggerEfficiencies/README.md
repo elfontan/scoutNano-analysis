@@ -67,9 +67,11 @@ condor_submit data2024_triggEffInclusive.submit
 
 Once the jobs are terminated, proceed to add all files together.
 
-Some plotting script are provided in the repository.
-
-For data and MC comparison, you can run, e.g.:
+Some plotting scripts are provided in the repository:
+* For inclusive trigger efficiencies in data: `plotDijet_trigEffIncl.py`
+* For inclusive trigger efficiencies in MC (note: proper weighting of the combined samples not included, useful for single-sample plots): `plotDijet_mcTrigEffIncl.py`
+* For data trigger efficiencies obtained for each category separately: `plotDijetHTEff.py` 
+* For data and MC comparison: `compare_data_mc_eff.py`, see example for running it below. 
 
 ```
 python3 compare_data_mc_eff.py --data /eos/cms/store/cmst3/user/elfontan/scoutAna/TriggerEff/histos_inclTrgEffData_2024H_wJECs.root --mc histos_TT4Q_JECs.root:762.1 histos_Wto2Q_JECs.root:16100  histos_QCD-HT200to400_JECs.root:1951000.0 histos_QCD-HT400to600_JECs.root:96660.0 histos_QCD-HT600to800_JECs.root:13684.0 histos_QCD-HT800to1000_JECs.root:3047.0 --mc-indir /eos/cms/store/cmst3/user/elfontan/scoutAna/TriggerEff --lumi-pb 1000 --variables ht_inclusive --vline 280 --rebin 4
