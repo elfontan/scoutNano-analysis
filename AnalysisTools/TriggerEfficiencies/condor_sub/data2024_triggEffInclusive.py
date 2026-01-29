@@ -113,9 +113,9 @@ def MuonID(mu):
     if mu.normchi2 >= 3: return False
 
     if mu.nValidRecoMuonHits <= 0: return False
-    if mu.nRecoMuonMatchedStations <= 3: return False
-    if mu.nValidPixelHits <= 1: return False
-    if mu.nTrackerLayersWithMeasurement <= 7: return False
+    if mu.nRecoMuonMatchedStations <= 1: return False
+    if mu.nValidPixelHits <= 0: return False
+    if mu.nTrackerLayersWithMeasurement <= 5: return False
 
     return True
 

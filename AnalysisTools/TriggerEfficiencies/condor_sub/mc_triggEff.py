@@ -112,9 +112,13 @@ def MuonID(mu):
     if mu.normchi2 >= 3: return False
 
     if mu.nValidRecoMuonHits <= 0: return False
-    if mu.nRecoMuonMatchedStations <= 3: return False
-    if mu.nValidPixelHits <= 1: return False
-    if mu.nTrackerLayersWithMeasurement <= 7: return False
+    if mu.nRecoMuonMatchedStations <= 1: return False
+    if mu.nValidPixelHits <= 0: return False
+    if mu.nTrackerLayersWithMeasurement <= 5: return False
+    #if mu.nValidRecoMuonHits <= 0: return False
+    #if mu.nRecoMuonMatchedStations <= 3: return False
+    #if mu.nValidPixelHits <= 1: return False
+    #if mu.nTrackerLayersWithMeasurement <= 7: return False
 
     return True
 
@@ -146,10 +150,43 @@ class TrigDijetHTAnalysis(Module):
         if self.isData:
             return 1.0
         return event.genWeight if hasattr(event, "genWeight") else 1.0
+
+    def beginFile(self, inputFile, outputFile, inputTree, wrappedOutputTree):
+        # inputFile is a TFile
+        runs = inputFile.Get("Runs")
+        if not runs:
+            return
+
+        sumw  = 0.0
+        sumw2 = 0.0
+        cnt   = 0.0
         
+        for r in runs:
+            if hasattr(r, "genEventSumw"):
+                sumw += r.genEventSumw
+            if hasattr(r, "genEventSumw2"):
+                sumw2 += r.genEventSumw2
+            if hasattr(r, "genEventCount"):
+                cnt += r.genEventCount
+
+        self.h_sumw.Fill(0.5, sumw)
+        self.h_sumw2.Fill(0.5, sumw2)
+        self.h_cnt.Fill(0.5, cnt)
+
+    
     def beginJob(self,histFile=None,histDirName=None):
         Module.beginJob(self,histFile,histDirName)
 
+        # Metadata
+        # --------
+        self.h_sumw  = ROOT.TH1D("h_sumw",  "sumw",  1, 0, 1)
+        self.h_sumw2 = ROOT.TH1D("h_sumw2", "sumw2", 1, 0, 1)
+        self.h_cnt   = ROOT.TH1D("h_cnt",   "count", 1, 0, 1)
+        
+        self.addObject(self.h_sumw)
+        self.addObject(self.h_sumw2)
+        self.addObject(self.h_cnt)
+        
         # Counters
         # --------
         self.n_totEvents_refTrig = 0 
