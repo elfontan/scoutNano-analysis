@@ -1,0 +1,3 @@
+root://cms-xrd-global.cern.ch//store/data/Run2024H/ScoutingPFRun3/NANOAOD/ScoutNano-v1/2810000/eceea3d2-6d46-416f-b491-5b33dc9b509c.root
+root://cms-xrd-global.cern.ch//store/data/Run2024H/ScoutingPFRun3/NANOAOD/ScoutNano-v1/2810000/0c663f8c-c4b7-46e7-bf52-645e2283daf7.root
+root://cms-xrd-global.cern.ch//store/data/Run2024H/ScoutingPFRun3/NANOAOD/ScoutNano-v1/2810000/2ff34713-b565-4fbd-b965-c4c6992eb92f.root

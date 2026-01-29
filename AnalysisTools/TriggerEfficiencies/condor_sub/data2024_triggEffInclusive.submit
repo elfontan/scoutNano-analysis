@@ -9,4 +9,4 @@ log                     = /dev/null
 should_transfer_files   = YES
 when_to_transfer_output = ON_EXIT
 
-queue filename from /afs/cern.ch/work/e/elfontan/private/dijetAnalysis_ScoutingRun3/TRIGGER_EFF/condor_sub/list_data2024I.txt 
+queue filename from /afs/cern.ch/work/e/elfontan/private/dijetAnalysis_ScoutingRun3/TRIGGER_EFF/condor_sub/list_data2024H.txt 

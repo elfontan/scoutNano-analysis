@@ -112,9 +112,9 @@ def MuonID(mu):
     if mu.normchi2 >= 3: return False
 
     if mu.nValidRecoMuonHits <= 0: return False
-    if mu.nRecoMuonMatchedStations <= 3: return False
-    if mu.nValidPixelHits <= 1: return False
-    if mu.nTrackerLayersWithMeasurement <= 7: return False
+    if mu.nRecoMuonMatchedStations <= 1: return False
+    if mu.nValidPixelHits <= 0: return False
+    if mu.nTrackerLayersWithMeasurement <= 5: return False
 
     return True
 # ---------------------------------------------------------------------------------------------------
@@ -162,8 +162,8 @@ class TrigDijetHTAnalysis(Module):
         self.h_minv_1_passed = ROOT.TH1F("h_minv_1_passed", "; M_{jj} VBF [GeV]; Efficiency;", 100, 30., 630.)
         self.h_ht_1_all = ROOT.TH1F("h_ht_1_all", "; H_{T} VBF [GeV]; Efficiency;", 100, 0., 1500.)
         self.h_ht_1_passed = ROOT.TH1F("h_ht_1_passed", "; H_{T} VBF [GeV]; Efficiency;", 100, 0., 1500.)
-        self.h_minv_2_all = ROOT.TH1F("h_minv_2_all", "; M_{jj} Boosted ISR [GeV]; Efficiency;", 100, 30., 630.)
-        self.h_minv_2_passed = ROOT.TH1F("h_minv_2_passed", "; M_{jj} Boosted ISR [GeV]; Efficiency;", 100, 30., 630.)
+        self.h_minv_2_all = ROOT.TH1F("h_minv_2_all", "; M_{AK8} Boosted ISR [GeV]; Efficiency;", 100, 30., 630.)
+        self.h_minv_2_passed = ROOT.TH1F("h_minv_2_passed", "; M_{AK8} Boosted ISR [GeV]; Efficiency;", 100, 30., 630.)
         self.h_ht_2_all = ROOT.TH1F("h_ht_2_all", "; H_{T} Boosted ISR [GeV]; Efficiency;", 100, 0., 1500.)
         self.h_ht_2_passed = ROOT.TH1F("h_ht_2_passed", "; H_{T} Boosted ISR [GeV]; Efficiency;", 100, 0., 1500.)
         self.h_ptak8_2_all = ROOT.TH1F("h_ptak8_2_all", "; p_{T} AK8 Boosted ISR [GeV]; Efficiency;", 100, 30., 630.)
@@ -238,18 +238,71 @@ class TrigDijetHTAnalysis(Module):
 
         self.n_total_events += 1
 
+
+        # ---------------------------------
+        # ------ Including HLT JECs -------  
+        # ---------------------------------
+        import correctionlib
+        import os
+        
+        # Path to JSON
+        # --------------------------------
+        jec_json = os.path.join(
+            os.getenv("CMSSW_BASE"),
+            "src",
+            "2024_UtilsDataQuality",
+            "jetHLT_jerc.json"
+        )
+        
+        # Load correction set
+        # --------------------------------
+        cset = correctionlib.CorrectionSet.from_file(jec_json)
+        #print("--- Regular corrections (printing keys): ")
+        #for k in cset.keys():
+        #    if "AK4" in k:
+        #        print(k)
+        #print("--- Compound corrections (printing keys): ")
+        #print(cset.compound.keys())
+
+        # Get the specific JEC
+        # --------------------------------
+        jec = cset.compound["HLT_Winter24_V1_MC_L1L2L3Res_AK4PFHLT"]
+
+        # Get Rho in the event
+        # --------------------------------
+        run = getattr(event, "run", None)                                                                                                            
+        rho = getattr(event, "ScoutingRho_fixedGridRhoFastjetAll", 0.0)
+        rho = event.ScoutingRho_fixedGridRhoFastjetAll
+        #rho = getattr(event, "ScoutingRho", 0.0)
+        #rho = event.ScoutingRho
         
         # ---------------------------------
         # --- Preselection requirements ---
         # ---------------------------------
-
         jets = Collection(event, "ScoutingPFJet")
         njets = getattr(event, "n" + jets._prefix)
 
+        corrected_pts = []
+        for j in jets:
+            variables = {
+                "JetPt": j.pt,
+                "JetEta": j.eta,
+                "JetPhi": j.phi,
+                "JetA": j.jetArea,
+                "Rho": rho,
+                "run": run,
+            }
+            inputs = [variables[inp.name] for inp in jec.inputs]
+            corr_factor = jec.evaluate(*inputs)
+            corrected_pt = j.pt * corr_factor
+            corrected_pts.append(corrected_pt)    
+            #pt_corr = jec.evaluate(*inputs)
+            #print("## PT = ", j.pt, " &&& PT_corr = ", j.pt*pt_corr, " ETA = ", j.eta)
+
         # --- Jet preselection ---
         njetAcc = [
-            j for j in jets
-            if j.pt > 30
+            j for j, pt_corr in zip(jets, corrected_pts) #j for j in jets 
+            if pt_corr > 30 #if j.pt * jec.evaluate(*inputs) > 30 #if j.pt > 30
             and abs(j.eta) < 5
             and JetID(j)          
         ]
@@ -268,11 +321,11 @@ class TrigDijetHTAnalysis(Module):
         # ---  Muon CLEANING:
         # -----------------------------
         for j in njetAcc:
-           # Build jet 4-vector
+            # Build jet 4-vector
             jvec = TLorentzVector()
             jvec.SetPtEtaPhiM(j.pt, j.eta, j.phi, j.m)
             
-           # Check if too close to any muon
+            # Check if too close to any muon
             close_muons = [mu for mu in muons if deltaR(j, mu) < 0.4]
            
             if close_muons:
@@ -291,7 +344,7 @@ class TrigDijetHTAnalysis(Module):
         njetAcc = clean_jets
 
         # --- Global HT definition ---
-        cutHT = 0.0
+        cutHT = 300.0
         njetHt = [j for j in clean_jets if j.Pt() > 30 and abs(j.Eta()) < 2.5]
         HT = sum(j.Pt() for j in njetHt)
 
@@ -368,7 +421,7 @@ class TrigDijetHTAnalysis(Module):
                     isr_candidates = []
                     for j in sort_jets:
                         j_lv = TLorentzVector()
-                        j_lv.SetPtEtaPhiM(j.pt, j.Eta(), j.phi, j.m)
+                        j_lv.SetPtEtaPhiM(j.Pt(), j.Eta(), j.Phi(), j.M())
 
                         dR = boosted_lv.DeltaR(j_lv)
 
@@ -503,7 +556,7 @@ class TrigDijetHTAnalysis(Module):
         # --- Prescaled L1 bits in JetHT scouting trigger
         #prescaled_l1Triggers = [
         #    "L1_HTT200er",
-        #    "L1_HTT250er",
+        #    "L1_HTT255er",
         #]
 
         # --- Keep only events in which one of the unprescaled triggers in the JetHT scouting path fired ---          
@@ -513,7 +566,15 @@ class TrigDijetHTAnalysis(Module):
                 getattr(event, "L1_DoubleJet30er2p5_Mass_Min250_dEta_Max1p5", False) or                                                        
                 getattr(event, "L1_ETT2000", False)                                                       
         ):                                                                                    
+            return False
+
+        # --- Discard events in which one of the prescaled/disabled triggers in the JetHT scouting path fired ---          
+        if (                                                                                              
+                getattr(event, "L1_HTT200er", False) or                                                        
+                getattr(event, "L1_HTT255er", False)                                                         
+        ):                                                                                    
             return False                                                                                                          
+
 
         if dst.PFScouting_JetHT == 1:
             self.h_ht_inclusive_passed.Fill(HT) ## Inclusive
@@ -553,7 +614,10 @@ preselection= "" #DST_PFScouting_SingleMuon == 1 && DST_PFScouting_JetHT == 1"
 ### Parse arguments ###
 ### --------------- ###
 args = dict(arg.split('=') for arg in sys.argv[1:] if '=' in arg)
-inputFile = args.get('inputFile', 'root://cms-xrd-global.cern.ch///store/data/Run2024I/ScoutingPFRun3/NANOAOD/PromptReco-v2/000/386/945/00000/12aef2b2-5167-4c14-9524-7f138fb56409.root')
+#inputFile = args.get('inputFile', 'root://eoscms.cern.ch//eos/cms/store/data/Run2024I/ScoutingPFRun3/NANOAOD/PromptReco-v2/000/386/864/00000/c0920fe5-182a-47c4-bf4c-aa8b4b4c7518.root')
+#inputFile = args.get('inputFile', 'root://cms-xrd-global.cern.ch/')
+#inputFile = args.get('inputFile', 'root://eoscms.cern.ch//eos/cms/store/data/Run2024I/ScoutingPFRun3/NANOAOD/PromptReco-v2/000/386/951/00000/8547f361-c4a3-468e-97ab-3b58535911ca.root')
+inputFile = args.get('inputFile', 'root://cms-xrd-global.cern.ch//store/data/Run2024H/ScoutingPFRun3/NANOAOD/ScoutNano-v1/2810000/6c46f11a-aba9-49c9-ab9d-df054244b544.root')
 outputFile = args.get('outputFile', 'histos_DijetHTTrigNanoAOD.root')
 
 ### ------- ###
