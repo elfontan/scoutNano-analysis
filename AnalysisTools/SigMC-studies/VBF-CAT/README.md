@@ -1,10 +1,8 @@
-# ---------------------------------------------------------
-# ----- Run 3 scouting dijet analysis: signal studies -----
-# ---------------------------------------------------------
+# Run 3 scouting dijet analysis: signal studies 
 
 
-# Gen-level study: MINIAODSIM #
--------------------------------
+## Gen-level study: MINIAODSIM
+
 If ScoutingNano are not available yet, a script to perform sanity checks on VBF signals on MINIAODSIM is provided.
 
 How to run:
@@ -13,8 +11,8 @@ python3  studyVBFSignals_miniaod.py --input "/eos/cms/store/cmst3/group/run3Scou
 ```
 
 
-# Gen-level study: ScoutingNano #
----------------------------------
+## Gen-level study: ScoutingNano 
+
 The same type of checks from the script above is implemented to run on ScoutingNano.
 
 Some options can be specified from command line:
@@ -32,8 +30,8 @@ python3 plot_genVBFHiggs_scoutNano.py --input VBFHTo2B_M300_genHiggs_scoutNano.r
 ``` 
 
 
-# Reco-level study (with and without gen-matching): ScoutingNano #
-------------------------------------------------------------------
+## Reco-level study (with and without gen-matching): ScoutingNano 
+
 Moving to reco-level studies (with and without gen-matching), a script is provided to study the forward jets from the VBF topology and to optimize the reconstruction of the central dijet pair.
 
 How to run:
@@ -77,8 +75,8 @@ Signal mass histograms (inclusive and matched only) are saved as output of the p
 * `h_signal_peak_matched_5GeV`
 
 
-# Signal modeling: all signal peaks + Double-CB fit of all peaks #
-------------------------------------------------------------------
+## Standalone signal modeling
+
 From the output of the previous step, signal peaks at different mass hypotheses can be studied together:
 
 ```
