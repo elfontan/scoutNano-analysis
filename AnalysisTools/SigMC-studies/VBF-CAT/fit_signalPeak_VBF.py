@@ -12,13 +12,13 @@ ROOT.gStyle.SetOptStat(0)
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description="Fit VBF signal peak histograms with a double-sided Crystal Ball model."
+        description="Fit VBF signal peaks with a double-sided Crystal Ball model."
     )
     parser.add_argument(
         "--indir",
         type=str,
-        default="VBF-dijetMass-Histos_ForFIT",
-        help="Directory containing vbf-m<MASS>-<ALGO>.root files.",
+        default=".",
+        help="Directory containing ROOT files to fit.",
     )
     parser.add_argument(
         "--outdir",
@@ -30,18 +30,48 @@ def parse_args():
         "--hist",
         type=str,
         default="h_signal_peak_selected_5GeV",
-        help="Histogram name to fit.",
+        help="Histogram name to fit when reading prebuilt histograms.",
     )
     parser.add_argument(
         "--algo",
         type=str,
         default=None,
-        help="Only process files matching this algorithm token, e.g. leading or minDR.",
+        help="Only process files matching this algorithm/selection token.",
     )
     parser.add_argument(
         "--recursive",
         action="store_true",
         help="Scan subdirectories of --indir as well.",
+    )
+    parser.add_argument(
+        "--tree",
+        type=str,
+        default="Events",
+        help="Tree name to use for current central-widejet study outputs.",
+    )
+    parser.add_argument(
+        "--expr",
+        type=str,
+        default="widejet_pair_mass",
+        help="Branch/expression to histogram when fitting from a tree.",
+    )
+    parser.add_argument(
+        "--selection",
+        type=str,
+        default="pass_trigger_baseline == 1 && isVBF == 1",
+        help="Tree selection used when fitting from a tree.",
+    )
+    parser.add_argument(
+        "--binWidth",
+        type=float,
+        default=5.0,
+        help="Histogram bin width in GeV when building the fit histogram from a tree.",
+    )
+    parser.add_argument(
+        "--xmaxFactor",
+        type=float,
+        default=2.1,
+        help="Maximum x-range relative to the signal mass when building the fit histogram from a tree.",
     )
     return parser.parse_args()
 
@@ -54,10 +84,13 @@ def hex_to_rootcolor(hexcode):
     return ROOT.TColor.GetColor(r, g, b)
 
 
-COLORS = {
+MASS_COLORS = {
     300: hex_to_rootcolor("#3f90da"),
-    500: hex_to_rootcolor("#bd1f01"),
-    1000: hex_to_rootcolor("#832db6"),
+    500: hex_to_rootcolor("#ffa90e"),
+    750: hex_to_rootcolor("#bd1f01"),
+    1000: hex_to_rootcolor("#2ca02c"),
+    2000: hex_to_rootcolor("#9467bd"),
+    3000: hex_to_rootcolor("#8c564b"),
 }
 
 
@@ -97,15 +130,35 @@ def draw_cms_label():
 
 def parse_signal_file(path, relpath):
     match = re.search(r"vbf-m(?P<mass>\d+)-(?P<algo>[^/]+)\.root$", relpath)
-    if not match:
-        return None
-    parent_dir = os.path.dirname(relpath)
-    return {
-        "path": path,
-        "mass": int(match.group("mass")),
-        "algo": match.group("algo"),
-        "tag": os.path.basename(parent_dir) if parent_dir not in ("", ".") else "base",
-    }
+    if match:
+        parent_dir = os.path.dirname(relpath)
+        return {
+            "path": path,
+            "mass": int(match.group("mass")),
+            "algo": match.group("algo"),
+            "tag": os.path.basename(parent_dir) if parent_dir not in ("", ".") else "base",
+            "format": "hist",
+        }
+
+    base = os.path.basename(relpath)
+    match = re.search(
+        r"CentralVBFHTo2B_M(?P<mass>\d+)_centralWideJetVBF_scoutNano_(?P<selection>.+)\.root$",
+        base,
+    )
+    if match:
+        selection = match.group("selection")
+        compact_match = re.search(r"(fwdPt.*)$", selection)
+        algo = compact_match.group(1) if compact_match else selection
+        return {
+            "path": path,
+            "mass": int(match.group("mass")),
+            "algo": algo,
+            "tag": "centralWideJetVBF",
+            "full_selection": selection,
+            "format": "tree",
+        }
+
+    return None
 
 
 def discover_files(indir, recursive, algo_filter):
@@ -139,6 +192,24 @@ def discover_files(indir, recursive, algo_filter):
 
 def sanitize_token(token):
     return re.sub(r"[^A-Za-z0-9_.-]+", "_", token)
+
+
+def color_for_mass(mass):
+    if mass in MASS_COLORS:
+        return MASS_COLORS[mass]
+    palette = [
+        "#3f90da",
+        "#ffa90e",
+        "#bd1f01",
+        "#2ca02c",
+        "#9467bd",
+        "#8c564b",
+        "#e377c2",
+        "#7f7f7f",
+        "#bcbd22",
+        "#17becf",
+    ]
+    return hex_to_rootcolor(palette[mass % len(palette)])
 
 
 def effective_sigma(hist, frac=0.683):
@@ -231,32 +302,108 @@ def compute_fwhm_from_roofit_pdf(pdf, xvar, xmin, xmax, nscan=5000):
 
 
 def get_fit_window(mass, hist_xmin, hist_xmax):
-    return max(hist_xmin, 0.35 * mass), min(hist_xmax, 2.0 * mass)
+    return max(hist_xmin, 0.30 * mass), min(hist_xmax, 2.1 * mass)
 
 
 def get_draw_range(mass, hist_xmin, hist_xmax):
-    return max(hist_xmin, 0.25 * mass), min(hist_xmax, 2.0 * mass)
+    return max(hist_xmin, 0.20 * mass), min(hist_xmax, 2.1 * mass)
 
 
-def fit_histogram(info, hist_name, outdir):
+def initialize_dscb_parameters(hist, info, sigma_eff, mean, sigma_left, sigma_right, alpha_left, n_left, alpha_right, n_right):
+    peak_bin = hist.GetMaximumBin()
+    peak_x = hist.GetBinCenter(peak_bin)
+    hist_rms = hist.GetRMS()
+    core_sigma = sigma_eff if sigma_eff > 0 else max(10.0, 0.10 * info["mass"])
+    core_sigma = min(core_sigma, max(30.0, 0.35 * info["mass"]))
+    peak_guess = peak_x if peak_x > 0 else info["mass"]
+
+    mean.setVal(peak_guess)
+    sigma_left.setVal(max(10.0, min(1.10 * core_sigma, max(25.0, 0.30 * info["mass"]))))
+    sigma_right.setVal(max(8.0, min(0.70 * core_sigma, max(20.0, 0.20 * info["mass"]))))
+    alpha_left.setVal(2.0)
+    n_left.setVal(3.0)
+    alpha_right.setVal(1.5)
+    n_right.setVal(3.0)
+
+    mean.setRange(max(0.70 * info["mass"], peak_guess - max(80.0, 1.5 * hist_rms)),
+                  min(1.20 * info["mass"], peak_guess + max(80.0, 1.5 * hist_rms)))
+
+
+def refit_if_needed(model, datahist, fitres, mean, sigma_left, sigma_right, alpha_left, n_left, alpha_right, n_right, sigma_eff, info):
+    if fitres.status() == 0 and fitres.covQual() >= 3:
+        return fitres
+
+    core_sigma = sigma_eff if sigma_eff > 0 else max(10.0, 0.10 * info["mass"])
+    mean.setVal(min(max(mean.getVal(), 0.75 * info["mass"]), 1.15 * info["mass"]))
+    sigma_left.setVal(max(10.0, min(core_sigma, max(25.0, 0.25 * info["mass"]))))
+    sigma_right.setVal(max(8.0, min(0.85 * core_sigma, max(18.0, 0.18 * info["mass"]))))
+    alpha_left.setVal(1.5)
+    n_left.setVal(5.0)
+    alpha_right.setVal(2.0)
+    n_right.setVal(4.0)
+
+    return model.fitTo(
+        datahist,
+        ROOT.RooFit.Save(True),
+        ROOT.RooFit.PrintLevel(-1),
+        ROOT.RooFit.Strategy(2),
+    )
+
+
+def build_histogram_from_tree(root_file, info, args):
+    tree = root_file.Get(args.tree)
+    if tree is None:
+        print(f"[WARNING] Missing tree {args.tree} in {info['path']}")
+        return None
+
+    xmax = max(700.0, args.xmaxFactor * float(info["mass"]))
+    nbins = int(round(xmax / args.binWidth))
+    hist_name = f"h_fitTree_m{info['mass']}_{sanitize_token(info['algo'])}_{sanitize_token(info['tag'])}"
+    hist = ROOT.TH1F(hist_name, f";m_{{jj}} [GeV];Events / {args.binWidth:g} GeV", nbins, 0.0, xmax)
+    hist.Sumw2()
+    draw_expr = f"{args.expr}>>{hist_name}"
+    n_drawn = int(tree.Draw(draw_expr, args.selection, "goff"))
+    if n_drawn <= 0 or hist.Integral() <= 0:
+        print(f"[WARNING] Empty tree selection for {info['path']} with selection: {args.selection}")
+        return None
+    hist.SetDirectory(0)
+    return hist
+
+
+def load_histogram(info, args):
     root_file = ROOT.TFile.Open(info["path"])
     if not root_file or root_file.IsZombie():
         print(f"[WARNING] Could not open file: {info['path']}")
-        return
+        return None
 
-    hist = root_file.Get(hist_name)
+    hist = None
+    if info.get("format") == "tree":
+        try:
+            hist = build_histogram_from_tree(root_file, info, args)
+        finally:
+            root_file.Close()
+        return hist
+
+    hist = root_file.Get(args.hist)
     if not hist:
-        print(f"[WARNING] Missing histogram {hist_name} in {info['path']}")
+        print(f"[WARNING] Missing histogram {args.hist} in {info['path']}")
         root_file.Close()
-        return
+        return None
     if not hist.InheritsFrom("TH1"):
-        print(f"[WARNING] Object {hist_name} is not a TH1 in {info['path']}")
+        print(f"[WARNING] Object {args.hist} is not a TH1 in {info['path']}")
         root_file.Close()
-        return
+        return None
 
     hist = hist.Clone(f"{hist.GetName()}_{info['mass']}_{info['algo']}_{info['tag']}")
     hist.SetDirectory(0)
     root_file.Close()
+    return hist
+
+
+def fit_histogram(info, args, outdir):
+    hist = load_histogram(info, args)
+    if hist is None:
+        return
 
     if hist.Integral() <= 0:
         print(f"[WARNING] Empty histogram in {info['path']}")
@@ -304,6 +451,19 @@ def fit_histogram(info, hist_name, outdir):
     alpha_right = ROOT.RooRealVar(f"alphaR_{info['mass']}_{info['algo']}", "alphaR", 1.0, 0.01, 5.0)
     n_right = ROOT.RooRealVar(f"nR_{info['mass']}_{info['algo']}", "nR", 2.0, 0.1, 50.0)
 
+    initialize_dscb_parameters(
+        hist,
+        info,
+        sigma_eff,
+        mean,
+        sigma_left,
+        sigma_right,
+        alpha_left,
+        n_left,
+        alpha_right,
+        n_right,
+    )
+
     model = ROOT.RooCrystalBall(
         f"dscb_{info['mass']}_{info['algo']}",
         f"dscb_{info['mass']}_{info['algo']}",
@@ -322,6 +482,20 @@ def fit_histogram(info, hist_name, outdir):
         ROOT.RooFit.Save(True),
         ROOT.RooFit.PrintLevel(-1),
         ROOT.RooFit.Strategy(1),
+    )
+    fitres = refit_if_needed(
+        model,
+        datahist,
+        fitres,
+        mean,
+        sigma_left,
+        sigma_right,
+        alpha_left,
+        n_left,
+        alpha_right,
+        n_right,
+        sigma_eff,
+        info,
     )
 
     fwhm_info = compute_fwhm_from_roofit_pdf(model, xvar, fit_xmin, fit_xmax)
@@ -350,7 +524,7 @@ def fit_histogram(info, hist_name, outdir):
     model.plotOn(
         frame,
         ROOT.RooFit.Name("model"),
-        ROOT.RooFit.LineColor(COLORS.get(info["mass"], ROOT.kBlue + 1)),
+        ROOT.RooFit.LineColor(color_for_mass(info["mass"])),
         ROOT.RooFit.LineWidth(3),
     )
 
@@ -407,7 +581,6 @@ def fit_histogram(info, hist_name, outdir):
     legend.SetBorderSize(0)
     legend.SetFillStyle(0)
     legend.SetTextSize(0.030)
-    region_text = "latest selection" if info["tag"] == "base" else info["tag"]
     legend.SetHeader(f"VBFHTo2B M={info['mass']} GeV", "C")
     #legend.SetHeader(f"VBFHTo2B M={info['mass']} GeV ({info['algo']})", "C")
     legend.AddEntry(frame.findObject("data"), "Data", "lep")
@@ -427,12 +600,13 @@ def fit_histogram(info, hist_name, outdir):
     text.DrawLatex(x0, y0 - dy, f"#sigma_{{L}} = {sigma_left.getVal():.2f} GeV")
     text.DrawLatex(x0, y0 - 2 * dy, f"#sigma_{{R}} = {sigma_right.getVal():.2f} GeV")
     text.DrawLatex(x0, y0 - 3 * dy, f"#sigma_{{eff}} = {sigma_eff:.1f} GeV")
-    #text.DrawLatex(x0, y0 - 4 * dy, f"Region: {region_text}")
     if x_eff_low is not None and x_eff_high is not None:
         text.DrawLatex(0.6, 0.40, f"68.3% interval = [{x_eff_low:.0f}, {x_eff_high:.0f}] GeV")
     if fwhm_info is not None:
         text.DrawLatex(0.6, 0.35, f"FWHM = {fwhm_info['fwhm']:.1f} GeV")
         text.DrawLatex(0.6, 0.30, f"#sigma/m = {rel_width_pct:.2f}%")
+   # if info.get("format") == "tree":
+        #text.DrawLatex(0.6, 0.25, "Selection: pass trigger baseline, isVBF")
 
     draw_cms_label()
 
@@ -440,6 +614,8 @@ def fit_histogram(info, hist_name, outdir):
     outbase = os.path.join(outdir, stem + "_fit")
     canvas.SaveAs(outbase + ".png")
     canvas.SaveAs(outbase + ".pdf")
+    #canvas.SaveAs(outbase + "_VBFTag-to-Central.png")
+    #canvas.SaveAs(outbase + "_VBFTag-to-Central.pdf")
 
     output_root = ROOT.TFile(outbase + ".root", "RECREATE")
     hist.Write("hist")
@@ -459,7 +635,7 @@ def main():
         raise RuntimeError(f"No matching ROOT files found in {args.indir}")
 
     for info in file_infos:
-        fit_histogram(info, args.hist, args.outdir)
+        fit_histogram(info, args, args.outdir)
 
     print(f"\n[INFO] Done. Outputs saved in: {args.outdir}")
 

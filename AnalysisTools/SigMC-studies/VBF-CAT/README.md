@@ -7,7 +7,7 @@ If ScoutingNano are not available yet, a script to perform sanity checks on VBF 
 
 How to run:
 ``` 
-python3  studyVBFSignals_miniaod.py --input "/eos/cms/store/cmst3/group/run3Scouting/LowMassDijetSearch/samples/2024/mc/PrivateProduction/SampleFactory/VBFHTo2B_Par-M-1000-W-0p014__chain_RunIII2024Summer24wmLHEGS-RunIII2024Summer24MiniAOD/SampleFactory/260416_160516/0000/RunIII2024Summer24MiniAOD*root" --out VBFHTo2B_M1000_genHiggs.root
+python3  GENLevel/studyVBFSignals_miniaod.py --input "PATH-To/RunIII2024Summer24MiniAOD*root" --out VBFHTo2B_M1000_genHiggs.root
 ```
 
 
@@ -17,16 +17,17 @@ The same type of checks from the script above is implemented to run on ScoutingN
 
 Some options can be specified from command line:
 * mass;
-* flavour can be specified: 2B, 2C, 2Q, 2Glu
+* flavour can be specified: 2B, 2C, 2Q, 2Glu;
+* a specific algorithm for taggin VBF, e.g. maxDEta or maxMjj
 
 How to run:
 ``` 
-python3 studyVBFSignals_scoutNano.py --decay 2B --mass 300
+python3 GENLevel/studyVBFSignals_scoutNano.py --decay 2B --mass 500 --vbfTagMode maxDEta
 ``` 
 
 A plotter to examine the output is provided:
 ``` 
-python3 plot_genVBFHiggs_scoutNano.py --input VBFHTo2B_M300_genHiggs_scoutNano.root --outdir /eos/user/e/elfontan/www/dijetAnaRun3/MCSignal/SignalOptimisationStudies/VBFCat/VBFHTo2B/GENLevel/M300 --label "VBFHTo2B M300 (2024)"
+python3 GENLevel/plot_genVBFHiggs_scoutNano.py --input VBFHTo2B_M500_genHiggs_scoutNano_VBFTagMode-maxDEta.root --outdir /eos/user/e/elfontan/www/dijetAnaRun3/MCSignal/SignalOptimisationStudies/VBFCat/VBFHTo2B/VBFCategory-GENLevel/M500 --label "VBFHTo2B M500 (2024)" --vbfTagMode maxDEta
 ``` 
 
 
@@ -36,53 +37,37 @@ Moving to reco-level studies (with and without gen-matching), a script is provid
 
 How to run:
 ``` 
-python3 studyVBFReco_scoutNano.py --decay 2B --mass 500  --requireTriggerBaseline --centralPairAlgo leading  --centralEtaMax 2.5  --output VBFHTo2B_M500_recoVBF_scoutNano_leading_massDepSel.root
+python3 studyCentralWideJetVBF_scoutNano.py --decay 2B --mass 500 --requireTriggerBaseline --forwardPairAlgo maxDEta --centralPairDEtaMax 1.3 --forwardJetPtMin 24 --forwardPairDEtaMin 4 --forwardPairExtraMjjMin 500 --output CentralVBFHTo2B_M500_centralWideJetVBF_scoutNano_centPt30-Deta1p3_fwdPt24_VBF-Deta4-Mjj500.root
 ```
 
-The option `requireTriggerBaseline` applies the trigger selection. There is also the possibility to simply save the tribber bit decision and apply it offline..
+The option `requireTriggerBaseline` applies the trigger selection. There is also the possibility to simply save the trigger bit decision and apply it offline.
 
-The algorithm for pairing the central dijet system can be chosen `--centralPairAlgo`:
-* leading
-* minDR
-* minDPhi
-* massClosest
+Various parameters can be tuned to optimize either the central pair selection:
 
-The option `centralPairSelection` allows to choose between a newly tested `massDependent` approach and a more standard angular approach to apply a selection on the central pair:
-* angular mode uses `dEta < args.centralPairDEtaMax and dPhi > args.centralPairDPhiMin`;
-* massDependent mode uses `dR > dr_min and apt < apt_max`.
+* forwardPairAlgo (maxDEta is assumed as default)
+* centralPairDEtaMax (1.3 is assumed as default)
 
-By default, a dR and leading/subleading jet compatibility with a dependency on the mass is applied:
-* `DeltaR > dR_min(mass)`
-* `A_pt < A_pt_max(mass)`, with A_pt = |pT1 - pT2| / (pT1 + pT2)
+or the VBF selection:
 
-with reference values of:
-* 300 GeV -> (1.5, 0.60)
-* 500 GeV -> (2.0, 0.45)
-* 1000 GeV -> (2.5, 0.35)
-
-This behaviour can be overwritten:
-* `--centralPairDRMin`
-* `--centralPairPtImbalanceMax`
-
+* forwardJetPtMin
+* forwardPairDEtaMin
+* forwardPairExtraMjjMin
 
 A plotter to examine the output is provided:
 ``` 
-python3 plot_recoVBF_scoutNano.py --input VBFHTo2B_M500_recoVBF_scoutNano.root --outdir  /eos/user/e/elfontan/www/dijetAnaRun3/MCSignal/SignalOptimisationStudies/VBFCat/VBFHTo2B//M500/RECOLevel --label "VBFHTo2B M500 (2024)"
+python3 plot_centralWideJetVBF_scoutNano.py --input CentralVBFHTo2B_M500_centralWideJetVBF_scoutNano_centPt30-Deta1p3_fwdPt24_VBF-Deta4-Mjj500.root --outdir /eos/user/e/elfontan/www/dijetAnaRun3/MCSignal/SignalOptimisationStudies/VBFCat/VBFHTo2B/CentralSamples-VBFCategory-FinalSELECTION/M500  --label "VBFHTo2B M500 (2024)"
 ``` 
 
-Signal mass histograms (inclusive and matched only) are saved as output of the plotting step, e.g.: `VBF-dijetMass-Histos_ForFIT/vbf-m500-leading.root`, with a 5 GeV bining:
-* `h_signal_peak_selected_5GeV`	
-* `h_signal_peak_matched_5GeV`
 
 
 ## Standalone signal modeling
 
-From the output of the previous step, signal peaks at different mass hypotheses can be studied together:
+From the output of the previous step, signal peaks at different mass hypotheses can be plotted together:
 
 ```
-python3 plot_allSignals_VBF.py --indir VBF-dijetMass-Histos_ForFIT --algo leading  --outdir /eos/user/e/elfontan/www/dijetAnaRun3/SIGModelling/VBF-CAT/
+python3 plot_savedWideJetMassesAll.py --workingPoint fwdPt24_VBF-Deta4-Mjj500 --outdir /eos/user/e/elfontan/www/dijetAnaRun3/MCSignal/SignalOptimisationStudies/VBFCat/VBFHTo2B/CentralSamples-VBFCategory-FinalSELECTION --label "2024 (13.6 TeV)" (--plotMatched)
 ```
-and a basic signal modelling based on a double-sided Crystal Ball can be done:
+and a basic signal modelling based on a double-sided Crystal Ball can be done for every signal mass under consideration:
 ```
-python3 fit_signalPeak_VBF.py --indir VBF-dijetMass-Histos_ForFIT --algo leading --outdir /eos/user/e/elfontan/www/dijetAnaRun3/SIGModelling/VBF-CAT/
+python3 fit_signalPeak_VBF.py --indir ./ --algo fwdPt24_VBF-Deta4-Mjj500 --outdir /eos/user/e/elfontan/www/dijetAnaRun3/MCSignal/SignalOptimisationStudies/VBFCat/VBFHTo2B/CentralSamples-VBFCategory-FinalSELECTION/
 ```
